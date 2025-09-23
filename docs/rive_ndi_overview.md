@@ -35,6 +35,24 @@ cmake -S . -B build-rive-ndi-win \
 
 These flags trim unrelated subsystems and speed up compilation while you iterate on the renderer, bindings, and NDI layer. Additional feature toggles can stay at their defaults unless you need them for debugging.
 
+### Audio Module Toggle
+
+The renderer/NDI stack stays leanest when the legacy audio toolchain is excluded. Set `YUP_ENABLE_AUDIO_MODULES=OFF` at configure time to keep the build focused on graphics and Python:
+
+```bash
+cmake -S . -B build-rive-ndi-win \
+  -DYUP_ENABLE_AUDIO_MODULES=OFF
+```
+
+Python wheel builds respect the same switch via an environment variable. When creating artifacts for automation hosts, export the variable before invoking `pip` or `python -m build`:
+
+```bash
+set YUP_ENABLE_AUDIO_MODULES=0
+python -m build python
+```
+
+Use `1` to re-enable the audio modules if a downstream integration actually needs them.
+
 ## Streamlined Commands
 A `just rive_ndi_win` recipe (landing soon in the project `justfile`) will encapsulate the configuration and build steps above, plus invoke targeted tests for the renderer/binding/NDI stack. Once available, run:
 

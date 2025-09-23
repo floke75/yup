@@ -616,6 +616,12 @@ macro (yup_add_default_modules modules_path)
     _yup_set_default (YUP_ARG_ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
     set (modules_definitions "${YUP_ARG_DEFINITIONS}")
 
+    if (YUP_ARG_ENABLE_AUDIO)
+        list (APPEND modules_definitions YUP_ENABLE_AUDIO_MODULES=1)
+    else()
+        list (APPEND modules_definitions YUP_ENABLE_AUDIO_MODULES=0)
+    endif()
+
     # ==== Thirdparty modules
     set (thirdparty_group "Thirdparty")
     yup_add_module (${modules_path}/thirdparty/zlib "${modules_definitions}" ${thirdparty_group})

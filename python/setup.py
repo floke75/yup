@@ -87,6 +87,7 @@ class CMakeBuildExtension(build_ext):
     build_with_lto = get_environment_option(int, "YUP_ENABLE_LTO", 0)
     build_osx_architectures = get_environment_option(str, "YUP_OSX_ARCHITECTURES", "arm64")
     build_osx_deployment_target = get_environment_option(str, "YUP_OSX_DEPLOYMENT_TARGET", "11.0")
+    build_enable_audio_modules = get_environment_option(int, "YUP_ENABLE_AUDIO_MODULES", 1)
 
     def build_extension(self, ext):
         log.info("building with cmake")
@@ -114,6 +115,10 @@ class CMakeBuildExtension(build_ext):
             f"-DPython_ROOT_DIR:PATH={sys.exec_prefix}",
             f"-DPython_INCLUDE_DIRS:PATH={get_python_includes_path()}",
             f"-DPython_LIBRARY_DIRS:PATH={get_python_lib_path()}"
+        ]
+
+        cmake_args += [
+            f"-DYUP_ENABLE_AUDIO_MODULES:BOOL={'ON' if self.build_enable_audio_modules else 'OFF'}",
         ]
 
         if platform.system() == 'Darwin':
