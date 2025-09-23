@@ -1,14 +1,9 @@
 [build-system]
 requires = [
-    # c++ building
-    #"cmake>=3.28",
-    # pyi generation
+    "cmake>=3.28",
+    "ninja",
     "mypy",
-    # unit tests (for code coverage cmake target)
     "pytest",
-    #"numpy",
-    #"imageio",
-    # defaults
     "setuptools",
     "wheel",
 ]
@@ -28,6 +23,9 @@ test-command = "pytest -s {project}/python/tests -vvv"
 manylinux-i686-image = "manylinux_2_28"
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
+
+[tool.cibuildwheel.windows]
+environment = { "CMAKE_GENERATOR" = "Visual Studio 17 2022", "CMAKE_CXX_STANDARD" = "17" }
 
 [tool.cibuildwheel.linux]
 before-build = [

@@ -1,3 +1,6 @@
 from . import common
 
-import yup
+try:
+    import yup  # noqa: F401
+except ModuleNotFoundError:
+    yup = None

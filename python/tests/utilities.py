@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
 from . import common
 
-import yup
+try:
+    import yup  # type: ignore  # noqa: F401
+except ImportError:
+    yup = None
 
 #==================================================================================================
 
