@@ -56,11 +56,20 @@ public:
     /** Loads a Rive file from an in-memory buffer. */
     Result loadFromBytes (Span<const uint8> bytes, const String& artboardName = {});
 
+    /** Lists the available artboards in the currently loaded file. */
+    StringArray listArtboards() const;
+
     /** Lists the available linear animations in the currently loaded artboard. */
     StringArray listAnimations() const;
 
     /** Lists the available state machines in the currently loaded artboard. */
     StringArray listStateMachines() const;
+
+    /** Selects the artboard with the specified name. */
+    Result selectArtboard (const String& artboardName);
+
+    /** Returns the name of the currently active artboard. */
+    String getActiveArtboardName() const;
 
     /** Starts playing the specified linear animation. */
     bool playAnimation (const String& animationName, bool shouldLoop = true);

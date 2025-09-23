@@ -41,6 +41,7 @@
 #include "rive/layout.hpp"
 #include "rive/animation/linear_animation_instance.hpp"
 #include "rive/animation/state_machine_instance.hpp"
+#include "rive/static_scene.hpp"
 #include "rive/renderer/d3d/d3d.hpp"
 #include "rive/renderer/d3d11/render_context_d3d_impl.hpp"
 #include "rive/renderer/rive_renderer.hpp"
@@ -154,6 +155,30 @@ struct RiveOffscreenRenderer::Impl
 
         artboardFile = loadResult.getValue();
 
+        return selectArtboardInternal (artboardName);
+    }
+
+    Result selectArtboard (const String& artboardName)
+    {
+        lastError.clear();
+
+        return selectArtboardInternal (artboardName);
+    }
+
+    Result selectArtboardInternal (const String& artboardName)
+    {
+        const auto failWith = [this] (String message)
+        {
+            lastError = std::move (message);
+            return Result::fail (lastError);
+        };
+
+        if (! initialised)
+            return failWith ("Rive offscreen renderer is not available");
+
+        if (artboardFile == nullptr)
+            return failWith ("No Rive file has been loaded");
+
         auto* riveFile = artboardFile->getRiveFile();
         if (riveFile == nullptr)
             return failWith ("Loaded Rive file is invalid");
@@ -166,27 +191,32 @@ struct RiveOffscreenRenderer::Impl
             loadedArtboard = riveFile->artboardDefault();
 
         if (loadedArtboard == nullptr)
-            return failWith ("Unable to create artboard instance");
-
-        artboard = std::move (loadedArtboard);
-        updateViewTransform();
-
-        resetScenes();
-
-        if (! scene)
-            return failWith ("Artboard does not contain a playable scene");
-
-        paused = false;
-
         {
-            std::scoped_lock lock (frameMutex);
-            frameSnapshot.reset();
-            frameSnapshotDirty = true;
+            if (artboardName.isNotEmpty())
+                return failWith ("Unable to find artboard named '" + artboardName + "'");
+
+            return failWith ("Rive file does not contain a default artboard");
         }
 
-        scene->advanceAndApply (0.0f);
-        renderFrame();
-        return Result::ok();
+        return setActiveArtboard (std::move (loadedArtboard));
+    }
+
+    StringArray listArtboards() const
+    {
+        StringArray names;
+
+        if (artboardFile == nullptr)
+            return names;
+
+        if (auto* riveFile = artboardFile->getRiveFile())
+        {
+            const auto artboardCount = riveFile->artboardCount();
+
+            for (std::size_t index = 0; index < artboardCount; ++index)
+                names.add (String (riveFile->artboardNameAt (index)));
+        }
+
+        return names;
     }
 
     StringArray listAnimations() const
@@ -425,7 +455,19 @@ private:
         if (artboard != nullptr)
             sceneHolder = artboard->defaultScene();
 
+        if (sceneHolder == nullptr && artboard != nullptr)
+            sceneHolder = std::make_unique<rive::StaticScene> (artboard.get());
+
         scene = sceneHolder.get();
+
+        if (scene != nullptr)
+        {
+            if (dynamic_cast<rive::StateMachineInstance*> (scene) != nullptr)
+            {
+                stateMachine.reset (static_cast<rive::StateMachineInstance*> (sceneHolder.release()));
+                scene = stateMachine.get();
+            }
+        }
     }
 
     void updateViewTransform()
@@ -514,6 +556,7 @@ private:
     rive::Mat2D viewTransform = rive::Mat2D::identity();
 
     String lastError;
+    String activeArtboardName;
 
     int width = 0;
     int height = 0;
@@ -542,6 +585,41 @@ private:
 
         return frameSnapshot;
     }
+
+    Result setActiveArtboard (std::unique_ptr<rive::ArtboardInstance> newArtboard)
+    {
+        if (newArtboard == nullptr)
+            return Result::fail ("Artboard instance is invalid");
+
+        artboard = std::move (newArtboard);
+        activeArtboardName = String (artboard->name());
+
+        updateViewTransform();
+        resetScenes();
+
+        if (scene == nullptr)
+            return Result::fail ("Artboard does not contain a playable scene");
+
+        paused = false;
+
+        {
+            std::scoped_lock lock (frameMutex);
+            frameSnapshot.reset();
+            frameSnapshotDirty = true;
+        }
+
+        scene->advanceAndApply (0.0f);
+        renderFrame();
+
+        return Result::ok();
+    }
+
+    String getActiveArtboardName() const
+    {
+        return activeArtboardName;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
 };
 
 } // namespace yup
@@ -573,6 +651,7 @@ struct RiveOffscreenRenderer::Impl
         return Result::fail (lastError);
     }
 
+    StringArray listArtboards() const { return {}; }
     StringArray listAnimations() const { return {}; }
     StringArray listStateMachines() const { return {}; }
     bool playAnimation (const String&, bool) { return false; }
@@ -590,6 +669,13 @@ struct RiveOffscreenRenderer::Impl
     const std::vector<uint8>& getFrameBuffer() const noexcept { return *frameBuffer; }
     std::shared_ptr<const std::vector<uint8>> getFrameBufferShared() const noexcept { return frameBuffer; }
     const String& getLastError() const noexcept { return lastError; }
+    Result selectArtboard (const String& name)
+    {
+        (void) name;
+        lastError = "Direct3D11 offscreen rendering is only available on Windows";
+        return Result::fail (lastError);
+    }
+    String getActiveArtboardName() const { return {}; }
 
     int width = 0;
     int height = 0;
@@ -627,6 +713,11 @@ Result RiveOffscreenRenderer::loadFromBytes (Span<const uint8> bytes, const Stri
     return impl->load (bytes, artboardName);
 }
 
+StringArray RiveOffscreenRenderer::listArtboards() const
+{
+    return impl->listArtboards();
+}
+
 StringArray RiveOffscreenRenderer::listAnimations() const
 {
     return impl->listAnimations();
@@ -645,6 +736,11 @@ bool RiveOffscreenRenderer::playAnimation (const String& animationName, bool sho
 bool RiveOffscreenRenderer::playStateMachine (const String& machineName)
 {
     return impl->playStateMachine (machineName);
+}
+
+Result RiveOffscreenRenderer::selectArtboard (const String& artboardName)
+{
+    return impl->selectArtboard (artboardName);
 }
 
 void RiveOffscreenRenderer::stop()
@@ -710,6 +806,11 @@ std::shared_ptr<const std::vector<uint8>> RiveOffscreenRenderer::getFrameBufferS
 const String& RiveOffscreenRenderer::getLastError() const noexcept
 {
     return impl->getLastError();
+}
+
+String RiveOffscreenRenderer::getActiveArtboardName() const
+{
+    return impl->getActiveArtboardName();
 }
 
 } // namespace yup

@@ -82,3 +82,17 @@ TEST (RiveOffscreenRendererTest, PauseStateCanBeToggled)
     EXPECT_FALSE (renderer.isPaused());
 }
 
+TEST (RiveOffscreenRendererTest, ArtboardEnumerationIsStubbed)
+{
+    RiveOffscreenRenderer renderer (kWidth, kHeight);
+
+    EXPECT_TRUE (renderer.listArtboards().isEmpty());
+    EXPECT_TRUE (renderer.listAnimations().isEmpty());
+    EXPECT_TRUE (renderer.listStateMachines().isEmpty());
+    EXPECT_TRUE (renderer.getActiveArtboardName().isEmpty());
+
+    const auto result = renderer.selectArtboard ("Example");
+    EXPECT_TRUE (result.failed());
+    EXPECT_FALSE (renderer.getLastError().isEmpty());
+}
+
