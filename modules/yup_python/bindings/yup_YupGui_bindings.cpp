@@ -33,10 +33,14 @@
 #include "../utilities/yup_WindowsIncludes.h"
 #endif
 
+#include "yup_gui/artboard/yup_RiveOffscreenRenderer.h"
+
 #include <functional>
+#include <optional>
 #include <string_view>
 #include <typeinfo>
 #include <tuple>
+#include <vector>
 
 // =================================================================================================
 
@@ -394,6 +398,78 @@ void registerYupGuiBindings (py::module_& m)
         .def ("getStyleProperty", &Component::getStyleProperty)
         .def ("findStyleProperty", &Component::findStyleProperty)
     ;
+
+    // ============================================================================================ yup::RiveOffscreenRenderer
+
+    py::class_<RiveOffscreenRenderer> classRiveRenderer (m, "RiveOffscreenRenderer");
+
+    classRiveRenderer
+        .def (py::init<int, int>(), "width"_a, "height"_a, "Create an offscreen renderer with the desired output size.")
+        .def_property_readonly ("is_valid", &RiveOffscreenRenderer::isValid, "True when Direct3D resources are available.")
+        .def ("load_file",
+              [] (RiveOffscreenRenderer& self, const std::string& path, const std::optional<std::string>& artboard)
+              {
+                  File fileToLoad (String (path));
+                  const auto artboardName = artboard.has_value() ? String (*artboard) : String();
+
+                  if (auto result = self.load (fileToLoad, artboardName); result.failed())
+                      throw py::value_error (result.getErrorMessage().toStdString());
+              },
+              "path"_a,
+              "artboard"_a = std::nullopt,
+              "Load a .riv file and prepare the default scene.")
+        .def ("list_animations",
+              [] (const RiveOffscreenRenderer& self)
+              {
+                  py::list names;
+                  auto animationNames = self.listAnimations();
+                  for (int index = 0; index < animationNames.size(); ++index)
+                      names.append (animationNames[index].toStdString());
+                  return names;
+              },
+              "Return the available linear animations for the active artboard.")
+        .def ("list_state_machines",
+              [] (const RiveOffscreenRenderer& self)
+              {
+                  py::list names;
+                  auto machineNames = self.listStateMachines();
+                  for (int index = 0; index < machineNames.size(); ++index)
+                      names.append (machineNames[index].toStdString());
+                  return names;
+              },
+              "Return the available state machines for the active artboard.")
+        .def ("play_animation", &RiveOffscreenRenderer::playAnimation, "name"_a, "loop"_a = true)
+        .def ("play_state_machine", &RiveOffscreenRenderer::playStateMachine, "name"_a)
+        .def ("stop", &RiveOffscreenRenderer::stop)
+        .def_property ("paused", &RiveOffscreenRenderer::isPaused, &RiveOffscreenRenderer::setPaused)
+        .def ("set_bool_input", &RiveOffscreenRenderer::setBoolInput, "name"_a, "value"_a)
+        .def ("set_number_input", &RiveOffscreenRenderer::setNumberInput, "name"_a, "value"_a)
+        .def ("fire_trigger", &RiveOffscreenRenderer::fireTriggerInput, "name"_a)
+        .def ("advance", &RiveOffscreenRenderer::advance, "delta_seconds"_a = 1.0f / 60.0f, py::call_guard<py::gil_scoped_release>())
+        .def ("get_frame",
+              [] (RiveOffscreenRenderer& self)
+              {
+                  auto buffer = self.getFrameBufferShared();
+                  const auto width = static_cast<py::ssize_t> (self.getWidth());
+                  const auto height = static_cast<py::ssize_t> (self.getHeight());
+                  const auto stride = static_cast<py::ssize_t> (self.getRowStride());
+
+                  return py::array (
+                      py::dtype::of<uint8>(),
+                      std::vector<py::ssize_t> { height, width, 4 },
+                      std::vector<py::ssize_t> { stride, 4, 1 },
+                      const_cast<uint8*> (buffer->data()),
+                      py::cast (buffer));
+              },
+              "Return the latest BGRA frame as a numpy array.")
+        .def_property_readonly ("width", &RiveOffscreenRenderer::getWidth)
+        .def_property_readonly ("height", &RiveOffscreenRenderer::getHeight)
+        .def_property_readonly ("row_stride", &RiveOffscreenRenderer::getRowStride)
+        .def_property_readonly ("last_error",
+                                [] (const RiveOffscreenRenderer& self)
+                                {
+                                    return self.getLastError().toStdString();
+                                });
 
     // ============================================================================================ yup::DocumentWindow
 
