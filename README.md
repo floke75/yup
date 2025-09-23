@@ -71,6 +71,22 @@ Install the resulting wheel into your Python environment and import `yup_rive_re
 - Document new public APIs with Doxygen (C++) or doctrings (Python).
 - Use `just` recipes or CMake presets to generate platform-specific projects; see `just --list` for details.
 
+### Preparing for Redundancy Pruning
+The next major milestone is a deliberate pruning pass that eliminates any lingering systems that do not feed the Rive → NDI data
+path. To keep that effort safe and predictable:
+
+- **Map dependencies before deleting files.** Renderer sources still depend on a curated subset of `yup_core`, `yup_events`, an
+  d `yup_graphics`; validate includes before removing whole modules.
+- **Preserve API contracts.** The Python extension and orchestrator expect specific method names (see `yup_rive_renderer` bindi
+  ngs and `yup_ndi` package). If an internal helper is renamed or removed, mirror the change across bindings/tests in the same b
+  ranch.
+- **Annotate temporary shims.** Files that only exist to bridge from legacy YUP types into the renderer should gain comments exp
+  laining their transitional role so they can be confidently excised once replacement utilities land.
+- **Keep tests authoritative.** When deleting redundant code, prefer expanding the renderer/orchestrator unit tests instead of a
+  dding new mocks. The pruning pass should end with fewer, more focused tests that still validate frame delivery.
+- **Avoid platform regressions.** Even though Windows is the release target, stub implementations for macOS/Linux keep our CI fl
+  owing. Replace them only when an equivalent stub is available.
+
 ## Roadmap
 - ✅ Direct3D 11 offscreen rendering prototype.
 - ✅ Rive animation playback with deterministic timing.

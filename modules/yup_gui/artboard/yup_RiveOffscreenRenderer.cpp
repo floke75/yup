@@ -98,6 +98,15 @@ constexpr DXGI_FORMAT kRenderFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
 
 struct RiveOffscreenRenderer::Impl
 {
+    /*
+        Implementation detail: this struct intentionally keeps a narrow surface
+        area so the upcoming refactor can collapse any unused YUP facilities
+        without breaking the Direct3D pipeline. When touching the members below,
+        double-check the Python bindings (`python/src/yup_rive_renderer.cpp`) and
+        the renderer tests (`tests/yup_gui/yup_RiveOffscreenRenderer.cpp`) because
+        they exercise the same behaviour. Delete helper methods only when the
+        tests prove the orchestrator still receives deterministic frames.
+    */
     explicit Impl (int widthIn, int heightIn)
         : width (widthIn),
           height (heightIn),

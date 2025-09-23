@@ -16,6 +16,13 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
 | Python test harness | ✅ `pytest` suites cover binding behaviour, orchestrator frame flow, and provide fake renderer/sender utilities that avoid native DLL requirements. | `python/tests/` |
 | Documentation & developer workflow | ⚠️ Needs expansion in `docs/` and `tools/` to describe Windows build steps, wheel packaging, and orchestration usage. |
 
+## Documentation Cross-References
+- **Quick orientation:** Start with the redundancy-pruning checklist in `README.md` to understand the trim plan for legacy modules and the guardrails that must remain while focusing on the Rive → NDI path.
+- **Rive → NDI flow:** The canonical walkthrough lives in `docs/Rive to NDI Guide.md`. It maps renderer classes to Python bindings, calls out the minimal module surface needed for transmission, and links TODOs for each subsystem.
+- **Legacy dependency audit:** Inline breadcrumbs inside `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.*` and `python/yup_ndi/orchestrator.py` enumerate bindings/tests that must stay aligned if refactors delete surrounding helpers.
+- **Testing expectations:** Use the guidance embedded in `python/tests/conftest.py` and `python/tests/common.py` to respect the mock strategy for environments without the native extension. Honour the skip markers before trimming any "legacy" fixtures that keep pytest green.
+- **Build/packaging recipes:** Use the pointers in `tools/` and the notes in `python/pyproject.toml` to keep MSVC/Ninja build flags, version pinning, and wheel metadata consistent with the Windows toolchain assumptions documented above.
+
 ## Key Components & File Map
 - **Renderer core:** `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp`
   - D3D11 setup, staging texture readback, artboard/animation/state-machine management, pause controls, and frame-buffer accessors.

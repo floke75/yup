@@ -37,6 +37,13 @@ class ArtboardFile;
     On platforms where the Direct3D backend is not available the renderer will
     fail gracefully and report an informative error when attempting to load
     content or render frames.
+
+    @note  The surrounding YUP modules still provide a few math/COM utilities
+           that this class relies on. When trimming unused code, confirm those
+           helpers have like-for-like replacements before deleting their
+           headers. The pybind11 module depends on every public method listed
+           here, so renaming/removing APIs requires synchronized updates to
+           `python/src/yup_rive_renderer.cpp` and the Python orchestrator.
 */
 class YUP_API RiveOffscreenRenderer
 {
