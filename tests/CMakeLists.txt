@@ -21,6 +21,10 @@ cmake_minimum_required(VERSION 3.28)
 
 enable_testing()
 
+if (NOT DEFINED YUP_ENABLE_AUDIO_MODULES)
+    set (YUP_ENABLE_AUDIO_MODULES ON)
+endif()
+
 # ==== Setup googletests
 if (YUP_PLATFORM_EMSCRIPTEN)
     set (gtest_disable_pthreads ON CACHE BOOL "" FORCE)
@@ -54,17 +58,24 @@ set (target_console OFF)
 set (target_gtest_modules "")
 set (target_modules
     yup_core
-    yup_audio_basics
-    yup_audio_devices
-    yup_audio_formats
-    yup_dsp
     yup_events
     yup_data_model
-    yup_graphics
-    pffft_library)
+    yup_graphics)
+
+if (YUP_ENABLE_AUDIO_MODULES)
+    list (APPEND target_modules
+        yup_audio_basics
+        yup_audio_devices
+        yup_audio_formats
+        yup_dsp
+        pffft_library)
+endif()
 
 if (NOT YUP_PLATFORM_EMSCRIPTEN)
-    list (APPEND target_modules yup_gui yup_audio_gui)
+    list (APPEND target_modules yup_gui)
+    if (YUP_ENABLE_AUDIO_MODULES)
+        list (APPEND target_modules yup_audio_gui)
+    endif()
     if (YUP_PLATFORM_DESKTOP AND NOT YUP_PLATFORM_WINDOWS)
         list (APPEND target_modules yup_python)
     endif()

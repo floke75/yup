@@ -19,6 +19,10 @@
 
 #==============================================================================
 
+if (NOT DEFINED YUP_ENABLE_AUDIO_MODULES)
+    set (YUP_ENABLE_AUDIO_MODULES ON)
+endif()
+
 function (_yup_module_parse_config module_header output_module_configs output_module_user_configs)
     set (module_configs "")
     set (module_user_configs "")
@@ -599,11 +603,12 @@ macro (yup_add_default_modules modules_path)
 
     # ==== Fetch options
     set (options "")
-    set (one_value_args ENABLE_PYTHON)
+    set (one_value_args ENABLE_PYTHON ENABLE_AUDIO)
     set (multi_value_args DEFINITIONS)
     cmake_parse_arguments (YUP_ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
     _yup_set_default (YUP_ARG_TARGET_DEFINITIONS "")
     _yup_set_default (YUP_ARG_ENABLE_PYTHON OFF)
+    _yup_set_default (YUP_ARG_ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
     set (modules_definitions "${YUP_ARG_DEFINITIONS}")
 
     # ==== Thirdparty modules
@@ -618,9 +623,11 @@ macro (yup_add_default_modules modules_path)
     yup_add_module (${modules_path}/thirdparty/rive "${modules_definitions}" ${thirdparty_group})
     yup_add_module (${modules_path}/thirdparty/rive_decoders "${modules_definitions}" ${thirdparty_group})
     yup_add_module (${modules_path}/thirdparty/rive_renderer "${modules_definitions}" ${thirdparty_group})
-    yup_add_module (${modules_path}/thirdparty/oboe_library "${modules_definitions}" ${thirdparty_group})
-    yup_add_module (${modules_path}/thirdparty/pffft_library "${modules_definitions}" ${thirdparty_group})
-    yup_add_module (${modules_path}/thirdparty/dr_libs "${modules_definitions}" ${thirdparty_group})
+    if (YUP_ARG_ENABLE_AUDIO)
+        yup_add_module (${modules_path}/thirdparty/oboe_library "${modules_definitions}" ${thirdparty_group})
+        yup_add_module (${modules_path}/thirdparty/pffft_library "${modules_definitions}" ${thirdparty_group})
+        yup_add_module (${modules_path}/thirdparty/dr_libs "${modules_definitions}" ${thirdparty_group})
+    endif()
 
     # ==== Yup modules
     set (modules_group "Modules")
@@ -633,8 +640,10 @@ macro (yup_add_default_modules modules_path)
     yup_add_module (${modules_path}/modules/yup_data_model "${modules_definitions}" ${modules_group})
     add_library (yup::yup_data_model ALIAS yup_data_model)
 
-    yup_add_module (${modules_path}/modules/yup_dsp "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_dsp ALIAS yup_dsp)
+    if (YUP_ARG_ENABLE_AUDIO)
+        yup_add_module (${modules_path}/modules/yup_dsp "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_dsp ALIAS yup_dsp)
+    endif()
 
     yup_add_module (${modules_path}/modules/yup_graphics "${modules_definitions}" ${modules_group})
     add_library (yup::yup_graphics ALIAS yup_graphics)
@@ -642,23 +651,19 @@ macro (yup_add_default_modules modules_path)
     yup_add_module (${modules_path}/modules/yup_gui "${modules_definitions}" ${modules_group})
     add_library (yup::yup_gui ALIAS yup_gui)
 
-    yup_add_module (${modules_path}/modules/yup_audio_basics "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_basics ALIAS yup_audio_basics)
-
-    yup_add_module (${modules_path}/modules/yup_audio_devices "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_devices ALIAS yup_audio_devices)
-
-    yup_add_module (${modules_path}/modules/yup_audio_formats "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_formats ALIAS yup_audio_formats)
-
-    yup_add_module (${modules_path}/modules/yup_audio_processors "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_processors ALIAS yup_audio_processors)
-
-    yup_add_module (${modules_path}/modules/yup_audio_gui "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_gui ALIAS yup_audio_gui)
-
-    yup_add_module (${modules_path}/modules/yup_audio_plugin_client "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_plugin_client ALIAS yup_audio_plugin_client)
+    if (YUP_ARG_ENABLE_AUDIO)
+        set (audio_modules
+            yup_audio_basics
+            yup_audio_devices
+            yup_audio_formats
+            yup_audio_processors
+            yup_audio_gui
+            yup_audio_plugin_client)
+        foreach (audio_module IN LISTS audio_modules)
+            yup_add_module (${modules_path}/modules/${audio_module} "${modules_definitions}" ${modules_group})
+            add_library (yup::${audio_module} ALIAS ${audio_module})
+        endforeach()
+    endif()
 
     if (YUP_ARG_ENABLE_PYTHON)
         if (NOT YUP_BUILD_WHEEL)

@@ -37,6 +37,7 @@ option (YUP_TARGET_ANDROID_BUILD_GRADLE "When building for Android, build the gr
 option (YUP_ENABLE_PROFILING "Enable the profiling code using Perfetto SDK" OFF)
 option (YUP_ENABLE_COVERAGE "Enable code coverage collection for tests" OFF)
 option (YUP_EXPORT_MODULES "Export the modules to the parent project" ON)
+option (YUP_ENABLE_AUDIO_MODULES "Build audio and DSP modules" ON)
 option (YUP_ENABLE_STATIC_PYTHON_LIBS "Use static Python libraries" OFF)
 option (YUP_BUILD_JAVA_SUPPORT "Build the Java support" OFF)
 option (YUP_BUILD_EXAMPLES "Build the examples" ${PROJECT_IS_TOP_LEVEL})
@@ -58,7 +59,9 @@ if (YUP_EXPORT_MODULES)
         set (enable_python OFF)
     endif()
 
-    yup_add_default_modules (${CMAKE_CURRENT_LIST_DIR} ENABLE_PYTHON ${enable_python})
+    yup_add_default_modules (${CMAKE_CURRENT_LIST_DIR}
+        ENABLE_PYTHON ${enable_python}
+        ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
 endif()
 
 # Enable profiling
@@ -73,7 +76,7 @@ if (YUP_BUILD_EXAMPLES)
     add_subdirectory (examples/console)
     add_subdirectory (examples/app)
     add_subdirectory (examples/graphics)
-    if (YUP_PLATFORM_DESKTOP)
+    if (YUP_PLATFORM_DESKTOP AND YUP_ENABLE_AUDIO_MODULES)
         add_subdirectory (examples/plugin)
     endif()
 endif()
