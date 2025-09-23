@@ -37,6 +37,18 @@ Keep these objectives in mind while navigating the codebase; most of YUP is unre
 - Add targeted tests (C++ or Python) to cover frame generation, animation advancement, and binding correctness. If NDI cannot be exercised in CI, stub or mock responsibly and note manual validation steps.
 - Leave unrelated subsystems exactly as they are; avoid incidental formatting or drive-by refactors outside the scope above.
 
+
+## Coding Standards (See also `CLAUDE.md`)
+- **File headers**: Every new C++ source or header file must begin with the canonical YUP comment block defined in `CLAUDE.md`. Do not omit or alter the wording.
+- **Formatting**: Follow Allman brace style for classes, functions, and control structures. Keep indentation consistent with existing code.
+- **Naming**: Use PascalCase for classes, camelCase for functions, variables, and constants. Keep one primary class per file (`yup_ClassName.h/.cpp`).
+- **Includes & guards**: Honour the include order guidance in `CLAUDE.md`, and prefer `#pragma once` in headers.
+- **Const-correctness & RAII**: Prefer immutable interfaces where possible, wrap resources in RAII helpers, and use YUP `Result`/`ResultValue` patterns for fallible operations.
+- **Documentation**: Provide meaningful Doxygen comments for any new public API you surface in C++ or Python bindings.
+- **Testing**: When adding tests, focus on public interfaces, keep them deterministic, and use `just test` (or the project’s documented equivalent) to execute them when requested.
+- **Platform guards**: Wrap platform-specific code with the `YUP_*` macros outlined in `CLAUDE.md`.
+- **String & optional utilities**: Prefer `yup::String`, `std::optional`, and other YUP-standard abstractions when handling dynamic values.
+
 ## Communication Notes
 - When creating pull requests or status updates, always tie progress back to the objectives listed here (renderer, animation engine, Python binding, NDI layer, Windows build support).
 - Call out dependencies or configuration changes that impact Visual Studio builds or Python packaging so downstream consumers can adjust quickly.
