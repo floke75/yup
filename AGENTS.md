@@ -8,7 +8,7 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (.
 2. **Rive Animation Control**: Build a wrapper that loads .riv files, manages artboards/animations/state machines, and coordinates frame advancement with rendering.
 3. **Python Bindings**: Expose the renderer/animation engine through pybind11 (module name TBD, e.g. `yup_rive_renderer`) with ergonomic methods for animation control and frame retrieval.
 4. **NDI Streaming Layer**: Implement Python orchestration that consumes BGRA frames and publishes them via cyndilib’s `Sender`, supporting multi-instance operation and optional REST/OSC control.
-5. **Windows Tooling**: Ensure all CMake targets and build scripts work with MSVC 2022, C++17, and the Windows 10/11 SDK. Other platforms are secondary.
+5. **Windows Tooling**: Ensure all CMake targets and build scripts work with MSVC 2022, C++17, and the Windows 10/11 SDK. Other platforms are secondary, and shipping/support expectations are limited to Windows 11.
 
 Keep these objectives in mind while navigating the codebase; most of YUP is unrelated to this pipeline.
 
