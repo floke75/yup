@@ -19,6 +19,10 @@
 
 cmake_minimum_required(VERSION 3.28)
 
+if (NOT YUP_ENABLE_AUDIO_MODULES)
+    return()
+endif()
+
 enable_testing()
 
 # ==== Setup googletests
