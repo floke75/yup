@@ -42,6 +42,10 @@
 #include "../bindings/yup_YupGui_bindings.h"
 #endif
 
+#if YUP_MODULE_AVAILABLE_yup_rive_renderer
+#include "../bindings/yup_YupRiveRenderer_bindings.h"
+#endif
+
 /*
 #if YUP_MODULE_AVAILABLE_yup_audio_basics
 #include "../bindings/yup_YupAudioBasics_bindings.h"
@@ -94,6 +98,10 @@ PYBIND11_MODULE (YUP_PYTHON_MODULE_NAME, m)
 
 #if YUP_MODULE_AVAILABLE_yup_gui
     yup::Bindings::registerYupGuiBindings (m);
+#endif
+
+#if YUP_MODULE_AVAILABLE_yup_rive_renderer
+    yup::Bindings::registerYupRiveRendererBindings (m);
 #endif
 
     /*

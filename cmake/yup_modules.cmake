@@ -642,6 +642,9 @@ macro (yup_add_default_modules modules_path)
     yup_add_module (${modules_path}/modules/yup_gui "${modules_definitions}" ${modules_group})
     add_library (yup::yup_gui ALIAS yup_gui)
 
+    yup_add_module (${modules_path}/modules/yup_rive_renderer "${modules_definitions}" ${modules_group})
+    add_library (yup::yup_rive_renderer ALIAS yup_rive_renderer)
+
     yup_add_module (${modules_path}/modules/yup_audio_basics "${modules_definitions}" ${modules_group})
     add_library (yup::yup_audio_basics ALIAS yup_audio_basics)
 
