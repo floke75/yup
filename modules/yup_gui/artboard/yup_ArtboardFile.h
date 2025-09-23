@@ -19,6 +19,12 @@
   ==============================================================================
 */
 
+namespace rive
+{
+class Factory;
+class FileAsset;
+} // namespace rive
+
 namespace yup
 {
 
@@ -46,7 +52,7 @@ public:
     //==============================================================================
     /** The result of loading a Rive file. */
     using LoadResult = ResultValue<std::shared_ptr<ArtboardFile>>;
-    using AssetLoadCallback = std::function<bool (const AssetInfo&, Span<const uint8>, rive::Factory& factory)>;
+    using AssetLoadCallback = std::function<bool (const AssetInfo&, rive::FileAsset&, Span<const uint8>, rive::Factory& factory)>;
 
     /** Loads a Rive file from a file.
 
