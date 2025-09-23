@@ -59,6 +59,12 @@ android:
 android:
   cmake -G "Visual Studio 17 2022" -B build -DYUP_TARGET_ANDROID=ON
 
+[doc("configure and build the Windows Rive NDI pipeline wheel")]
+[windows]
+rive_ndi_win CONFIG="Release":
+  cmake -G "Visual Studio 17 2022" -B build/rive_ndi -DYUP_ENABLE_AUDIO_MODULES=OFF -DYUP_BUILD_WHEEL=ON
+  cmake --build build/rive_ndi --target yup --config {{CONFIG}}
+
 [doc("generate and open project for Android using Android Studio (linux)")]
 [linux]
 android:

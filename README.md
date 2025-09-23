@@ -158,8 +158,17 @@ Available recipes:
     ios_simulator PLATFORM="SIMULATORARM64" # generate and open project for iOS Simulator macOS using Xcode
     linux PROFILING="OFF"                   # generate project in Linux using Ninja
     mac PROFILING="OFF"                     # generate and open project in macOS using Xcode
+    rive_ndi_win CONFIG="Release"           # configure and build Windows Rive NDI pipeline wheel
     win PROFILING="OFF"                     # generate and open project in Windows using Visual Studio
 ```
+
+To bootstrap the Windows-focused Rive + NDI pipeline (with audio modules disabled and the Python wheel enabled), run:
+
+```bash
+just rive_ndi_win
+```
+
+By default this configures a Visual Studio 2022 solution under `build/rive_ndi` and immediately builds the `yup` target. Once the build completes you can open the generated solution or iterate with additional `cmake --build build/rive_ndi --target yup --config Release` invocations as needed.
 
 ## Preparing the build directory
 Create a Dedicated Build Directory:
@@ -179,6 +188,13 @@ For a standard desktop build with tests and examples enabled, run:
 ```bash
 cmake . -B build -DYUP_ENABLE_TESTS=ON -DYUP_ENABLE_EXAMPLES=ON
 cmake --build build --config Release --parallel 4
+```
+
+### Windows Rive NDI workflow
+When focusing on the Direct3D-based Rive renderer feeding the Python NDI bindings, prefer the dedicated `just rive_ndi_win` recipe documented above. It configures with `YUP_BUILD_WHEEL=ON` and `YUP_ENABLE_AUDIO_MODULES=OFF` so the resulting solution is streamlined for the renderer + wheel target. After the initial configure/build, subsequent edits can be recompiled with:
+
+```bash
+cmake --build build/rive_ndi --target yup --config Release
 ```
 
 
