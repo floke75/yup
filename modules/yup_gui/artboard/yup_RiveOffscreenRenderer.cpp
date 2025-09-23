@@ -24,10 +24,13 @@
 #include "artboard/yup_RiveOffscreenRenderer.h"
 
 #include "artboard/yup_ArtboardFile.h"
+#include "yup_core/streams/yup_MemoryInputStream.h"
 
 #include <array>
 #include <cstring>
+#include <functional>
 #include <optional>
+#include <mutex>
 
 #if YUP_WINDOWS && YUP_RIVE_USE_D3D
 
@@ -98,7 +101,7 @@ struct RiveOffscreenRenderer::Impl
         : width (widthIn),
           height (heightIn),
           rowStride (static_cast<std::size_t> (widthIn) * 4),
-          frameBuffer (std::make_shared<std::vector<uint8>> (static_cast<std::size_t> (widthIn) * static_cast<std::size_t> (heightIn) * 4u))
+          frameBufferWrite (static_cast<std::size_t> (widthIn) * static_cast<std::size_t> (heightIn) * 4u, 0)
     {
         initialise();
     }
@@ -109,6 +112,24 @@ struct RiveOffscreenRenderer::Impl
 
     Result load (const File& fileToLoad, const String& artboardName)
     {
+        return loadInternal (
+            [&fileToLoad] (rive::Factory& factory) { return ArtboardFile::load (fileToLoad, factory); }, artboardName);
+    }
+
+    Result load (Span<const uint8> bytes, const String& artboardName)
+    {
+        return loadInternal (
+            [&bytes] (rive::Factory& factory)
+            {
+                MemoryInputStream stream (bytes.data(), bytes.size(), false);
+                return ArtboardFile::load (stream, factory);
+            },
+            artboardName);
+    }
+
+    Result loadInternal (const std::function<ArtboardFile::LoadResult (rive::Factory&)>& loader,
+                         const String& artboardName)
+    {
         if (! initialised)
             return Result::fail ("Rive offscreen renderer is not available");
 
@@ -116,7 +137,7 @@ struct RiveOffscreenRenderer::Impl
         if (factory == nullptr)
             return Result::fail ("Missing Rive factory");
 
-        auto loadResult = ArtboardFile::load (fileToLoad, *factory);
+        auto loadResult = loader (*factory);
         if (! loadResult)
         {
             lastError = loadResult.getErrorMessage();
@@ -146,6 +167,12 @@ struct RiveOffscreenRenderer::Impl
 
         if (! scene)
             return Result::fail ("Artboard does not contain a playable scene");
+
+        {
+            std::scoped_lock lock (frameMutex);
+            frameSnapshot.reset();
+            frameSnapshotDirty = true;
+        }
 
         scene->advanceAndApply (0.0f);
         renderFrame();
@@ -290,8 +317,11 @@ struct RiveOffscreenRenderer::Impl
     int getHeight() const noexcept { return height; }
     std::size_t getStride() const noexcept { return rowStride; }
 
-    const std::vector<uint8>& getFrameBuffer() const noexcept { return *frameBuffer; }
-    std::shared_ptr<const std::vector<uint8>> getFrameBufferShared() const noexcept { return frameBuffer; }
+    const std::vector<uint8>& getFrameBuffer() const noexcept { return *ensureFrameSnapshot(); }
+    std::shared_ptr<const std::vector<uint8>> getFrameBufferShared() const noexcept
+    {
+        return ensureFrameSnapshot();
+    }
 
     const String& getLastError() const noexcept { return lastError; }
 
@@ -426,13 +456,18 @@ private:
         }
 
         auto* srcBytes = static_cast<const uint8*> (mapped.pData);
-        auto* dstBytes = frameBuffer->data();
 
-        for (int row = 0; row < height; ++row)
         {
-            const auto srcRow = srcBytes + static_cast<std::size_t> (row) * mapped.RowPitch;
-            auto* dstRow = dstBytes + static_cast<std::size_t> (row) * rowStride;
-            std::memcpy (dstRow, srcRow, rowStride);
+            std::scoped_lock lock (frameMutex);
+
+            for (int row = 0; row < height; ++row)
+            {
+                const auto srcRow = srcBytes + static_cast<std::size_t> (row) * mapped.RowPitch;
+                auto* dstRow = frameBufferWrite.data() + static_cast<std::size_t> (row) * rowStride;
+                std::memcpy (dstRow, srcRow, rowStride);
+            }
+
+            frameSnapshotDirty = true;
         }
 
         deviceContext->Unmap (stagingTexture.Get(), 0);
@@ -447,7 +482,10 @@ private:
     rive::rcp<rive::gpu::RenderTargetD3D> renderTarget;
     std::unique_ptr<rive::RiveRenderer> renderer;
 
-    std::shared_ptr<std::vector<uint8>> frameBuffer;
+    std::vector<uint8> frameBufferWrite;
+    mutable std::shared_ptr<std::vector<uint8>> frameSnapshot;
+    mutable bool frameSnapshotDirty = true;
+    mutable std::mutex frameMutex;
 
     std::shared_ptr<ArtboardFile> artboardFile;
     std::unique_ptr<rive::ArtboardInstance> artboard;
@@ -466,6 +504,27 @@ private:
 
     bool initialised = false;
     bool paused = false;
+
+    std::shared_ptr<std::vector<uint8>> ensureFrameSnapshot() const
+    {
+        std::scoped_lock lock (frameMutex);
+
+        if (frameSnapshotDirty || frameSnapshot == nullptr)
+        {
+            if (frameSnapshot != nullptr && frameSnapshot.use_count() == 1 && frameSnapshot->size() == frameBufferWrite.size())
+            {
+                *frameSnapshot = frameBufferWrite;
+            }
+            else
+            {
+                frameSnapshot = std::make_shared<std::vector<uint8>> (frameBufferWrite);
+            }
+
+            frameSnapshotDirty = false;
+        }
+
+        return frameSnapshot;
+    }
 };
 
 } // namespace yup
@@ -486,6 +545,12 @@ struct RiveOffscreenRenderer::Impl
     bool isValid() const noexcept { return false; }
 
     Result load (const File&, const String&)
+    {
+        lastError = "Direct3D11 offscreen rendering is only available on Windows";
+        return Result::fail (lastError);
+    }
+
+    Result load (Span<const uint8> /*bytes*/, const String&)
     {
         lastError = "Direct3D11 offscreen rendering is only available on Windows";
         return Result::fail (lastError);
@@ -537,6 +602,11 @@ bool RiveOffscreenRenderer::isValid() const noexcept
 Result RiveOffscreenRenderer::load (const File& file, const String& artboardName)
 {
     return impl->load (file, artboardName);
+}
+
+Result RiveOffscreenRenderer::loadFromBytes (Span<const uint8> bytes, const String& artboardName)
+{
+    return impl->load (bytes, artboardName);
 }
 
 StringArray RiveOffscreenRenderer::listAnimations() const
