@@ -53,6 +53,9 @@ public:
     /** Loads a Rive file from disk. */
     Result load (const File& file, const String& artboardName = {});
 
+    /** Loads a Rive file from an in-memory buffer. */
+    Result loadFromBytes (Span<const uint8> bytes, const String& artboardName = {});
+
     /** Lists the available linear animations in the currently loaded artboard. */
     StringArray listAnimations() const;
 
