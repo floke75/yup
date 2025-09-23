@@ -37,6 +37,7 @@ Keep these objectives in mind while navigating the codebase; most of YUP is unre
 - Add targeted tests (C++ or Python) to cover frame generation, animation advancement, and binding correctness. If NDI cannot be exercised in CI, stub or mock responsibly and note manual validation steps.
 - Leave unrelated subsystems exactly as they are; avoid incidental formatting or drive-by refactors outside the scope above.
 
+
 ## Coding Standards (See also `CLAUDE.md`)
 - **File headers**: Every new C++ source or header file must begin with the canonical YUP comment block defined in `CLAUDE.md`. Do not omit or alter the wording.
 - **Formatting**: Follow Allman brace style for classes, functions, and control structures. Keep indentation consistent with existing code.

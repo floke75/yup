@@ -418,6 +418,29 @@ void registerYupGuiBindings (py::module_& m)
               "path"_a,
               "artboard"_a = std::nullopt,
               "Load a .riv file and prepare the default scene.")
+        .def ("load_bytes",
+              [] (RiveOffscreenRenderer& self, py::buffer data, const std::optional<std::string>& artboard)
+              {
+                  auto info = data.request (true);
+
+                  if (info.ndim != 1)
+                      throw py::value_error ("Rive data must be provided as a 1D bytes-like object");
+
+                  const auto byteCount = static_cast<std::size_t> (info.size) * static_cast<std::size_t> (info.itemsize);
+
+                  if (byteCount == 0)
+                      throw py::value_error ("Rive data buffer is empty");
+
+                  const auto artboardName = artboard.has_value() ? String (*artboard) : String();
+
+                  Span<const uint8> bytes { static_cast<const uint8*> (info.ptr), byteCount };
+
+                  if (auto result = self.loadFromBytes (bytes, artboardName); result.failed())
+                      throw py::value_error (result.getErrorMessage().toStdString());
+              },
+              "data"_a,
+              "artboard"_a = std::nullopt,
+              "Load a .riv file from an in-memory bytes-like object.")
         .def ("list_animations",
               [] (const RiveOffscreenRenderer& self)
               {
