@@ -22,12 +22,32 @@ cmake_minimum_required (VERSION 3.28)
 _yup_get_project_version_string (${CMAKE_CURRENT_LIST_DIR}/../modules yup_version)
 _yup_message (STATUS "Building project version ${yup_version}")
 
+if (NOT DEFINED YUP_ENABLE_AUDIO_MODULES)
+    set (YUP_ENABLE_AUDIO_MODULES ON)
+endif()
+
 set (target_name yup)
 set (target_version ${yup_version})
 project (${target_name} VERSION ${target_version})
 
+set (python_modules
+    yup::yup_core
+    yup::yup_data_model
+    yup::yup_events
+    yup::yup_graphics
+    yup::yup_gui
+    yup::yup_python)
+
+if (YUP_ENABLE_AUDIO_MODULES)
+    list (PREPEND python_modules
+        yup::yup_audio_basics
+        yup::yup_audio_devices
+        yup::yup_audio_processors)
+endif()
+
 yup_add_default_modules ("${CMAKE_CURRENT_LIST_DIR}/.."
     ENABLE_PYTHON ON
+    ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES}
     DEFINITIONS
         YUP_STANDALONE_APPLICATION=1
         YUP_DISABLE_JUCE_VERSION_PRINTING=1
@@ -50,15 +70,7 @@ yup_standalone_app (
     TARGET_APP_NAMESPACE "org.yup"
     TARGET_WHEEL ON
     MODULES
-        yup::yup_audio_basics
-        yup::yup_audio_devices
-        yup::yup_audio_processors
-        yup::yup_core
-        yup::yup_data_model
-        yup::yup_events
-        yup::yup_graphics
-        yup::yup_gui
-        yup::yup_python)
+        ${python_modules})
 
 set_target_properties (${target_name} PROPERTIES
     CXX_EXTENSIONS OFF

@@ -38,6 +38,10 @@ function (yup_audio_plugin)
 
     _yup_set_default (YUP_ARG_TARGET_CXX_STANDARD 17)
 
+    if (DEFINED YUP_ENABLE_AUDIO_MODULES AND NOT YUP_ENABLE_AUDIO_MODULES)
+        _yup_message (FATAL_ERROR "Audio plugin targets require YUP_ENABLE_AUDIO_MODULES to be ON.")
+    endif()
+
     set (target_name "${YUP_ARG_TARGET_NAME}")
     set (target_version "${YUP_ARG_TARGET_VERSION}")
     set (target_ide_group "${YUP_ARG_TARGET_IDE_GROUP}")

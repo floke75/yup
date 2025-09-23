@@ -27,11 +27,16 @@ project (${target_name} VERSION ${target_version})
 
 set (rive_file "data/alien.riv")
 
+if (NOT DEFINED YUP_ENABLE_AUDIO_MODULES)
+    set (YUP_ENABLE_AUDIO_MODULES ON)
+endif()
+
 # ==== Prepare Android build
-set (link_libraries "")
+set (link_libraries)
 if (ANDROID)
     include (../../cmake/yup.cmake)
-    yup_add_default_modules ("${CMAKE_CURRENT_LIST_DIR}/../..")
+    yup_add_default_modules ("${CMAKE_CURRENT_LIST_DIR}/../.."
+        ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
 
     yup_add_embedded_binary_resources (
         "${target_name}_binary_data"
@@ -52,6 +57,28 @@ if (YUP_PLATFORM_DESKTOP)
     set (additional_modules yup::yup_python)
 endif()
 
+set (example_modules
+    yup::yup_core
+    yup::yup_events
+    yup::yup_graphics
+    yup::yup_gui
+    libpng
+    libwebp
+    ${additional_modules}
+    ${link_libraries})
+
+if (YUP_ENABLE_AUDIO_MODULES)
+    list (INSERT example_modules 1
+        yup::yup_audio_basics
+        yup::yup_audio_devices
+        yup::yup_dsp
+        yup::yup_audio_gui
+        yup::yup_audio_processors
+        yup::yup_audio_formats
+        pffft_library
+        dr_libs)
+endif()
+
 yup_standalone_app (
     TARGET_NAME ${target_name}
     TARGET_VERSION ${target_version}
@@ -63,22 +90,7 @@ yup_standalone_app (
     PRELOAD_FILES
         "${CMAKE_CURRENT_LIST_DIR}/${rive_file}@${rive_file}"
     MODULES
-        yup::yup_core
-        yup::yup_audio_basics
-        yup::yup_audio_devices
-        yup::yup_dsp
-        yup::yup_events
-        yup::yup_graphics
-        yup::yup_gui
-        yup::yup_audio_gui
-        yup::yup_audio_processors
-        yup::yup_audio_formats
-        pffft_library
-        dr_libs
-        libpng
-        libwebp
-        ${additional_modules}
-        ${link_libraries})
+        ${example_modules})
 
 # ==== Prepare sources
 if (NOT YUP_TARGET_ANDROID)
