@@ -23,38 +23,95 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
 - **Testing expectations:** Use the guidance embedded in `python/tests/conftest.py` and `python/tests/common.py` to respect the mock strategy for environments without the native extension. Honour the skip markers before trimming any "legacy" fixtures that keep pytest green.
 - **Build/packaging recipes:** Use the pointers in `tools/` and the notes in `python/pyproject.toml` to keep MSVC/Ninja build flags, version pinning, and wheel metadata consistent with the Windows toolchain assumptions documented above.
 
-## Key Components & File Map
-- **Renderer core:** `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp`
-  - D3D11 setup, staging texture readback, artboard/animation/state-machine management, pause controls, and frame-buffer accessors.
-  - Non-Windows fallback stub maintains API compatibility but reports unsupported status.
-- **Supporting tests:** `tests/yup_gui/yup_RiveOffscreenRenderer.cpp`
-  - Exercises pause toggling, buffer sharing, stride validation, and artboard selection across stubbed renderers.
-- **Python binding:** `python/src/yup_rive_renderer.cpp`
-  - Binds renderer lifecycle, exposes artboard lists, playback controls, state-machine inputs, and `memoryview`-friendly BGRA buffers.
-  - Build definitions live in `python/CMakeLists.txt`; packaging metadata in `python/pyproject.toml` targets MSVC 2022 + C++17 with Ninja.
-- **Python orchestration:** `python/yup_ndi/orchestrator.py`
-  - Implements `RiveStreamOrchestrator`, stream configuration dataclasses, metadata callbacks, REST/OSC hook placeholders, and stream lifecycle management.
-  - Package entry point re-exports live in `python/yup_ndi/__init__.py`.
-- **Python tests & utilities:**
-  - `python/tests/test_yup_ndi/test_orchestrator.py` supplies orchestrator coverage with fake renderer/sender fixtures.
-  - `python/tests/common.py`, `python/tests/utilities.py`, and `python/tests/conftest.py` provide shared helpers and dependency guards when the native extension is unavailable.
-- **Packaging scaffold:** `python/setup.py`, `python/MANIFEST.in`, and `python/tools/` for Windows wheel generation (needs auditing as work continues).
+## Coding Standards & Structure
+The following conventions apply to all new or modified source files within this repository:
+
+### Required File Header
+Start every new source file with the exact ISC licence banner below. Update legacy files if they are missing it when you touch them.
+
+```cpp
+/*
+  ==============================================================================
+
+   This file is part of the YUP library.
+   Copyright (c) 2025 - kunitoki@gmail.com
+
+   YUP is an open source library subject to open-source licensing.
+
+   The code included in this file is provided under the terms of the ISC license
+   http://www.isc.org/downloads/software-support-policy/isc-license. Permission
+   to use, copy, modify, and/or distribute this software for any purpose with or
+   without fee is hereby granted provided that the above copyright notice and
+   this permission notice appear in all copies.
+
+   YUP IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+   DISCLAIMED.
+
+  ==============================================================================
+*/
+```
+
+### Module Header Block
+Primary module headers (e.g., `yup_graphics.h`) must also include the declaration block below immediately after the licence banner. Update `module_name` and other fields appropriately.
+
+```cpp
+/*
+  ==============================================================================
+
+  BEGIN_YUP_MODULE_DECLARATION
+
+    ID:                 module_name
+    vendor:             yup
+    version:            1.0.0
+    name:               Module Display Name
+    description:        Brief module description
+    website:            https://github.com/kunitoki/yup
+    license:            ISC
+    minimumCppStandard: 17
+
+    dependencies:       yup_graphics [other_dependencies]
+    searchpaths:        native
+    enableARC:          1
+
+  END_YUP_MODULE_DECLARATION
+
+  ==============================================================================
+*/
+```
+
+### Formatting, Naming, and Includes
+- Follow Allman-style braces for all scopes.
+- Use `PascalCase` for classes, `camelCase` for functions, variables, constants, and member fields.
+- Match file names to the primary class (e.g., `yup_ClassName.h/.cpp`).
+- Keep include order as follows: own header (if in a `.cpp`), C++ standard library, external dependencies (Rive, etc.), other YUP modules, and finally headers from the same module.
+- Avoid `using namespace` in headers; limit its use to the narrowest possible scope within implementation or test files.
+
+### File & Test Organisation
+- Modules should remain shallow: a top-level header/implementation pair with a single nested directory for related classes and a `native/` folder for per-platform sources.
+- Unit tests live under `tests/<module_name>/` and should be grouped by class or integration scenario.
+
+## Design & Implementation Principles
+- Prefer RAII and smart pointers for resource management.
+- Use `std::optional` for optional values and `yup::String` for most string operations (use `std::string` only when bridging external APIs).
+- Keep classes narrowly focused, apply const-correctness, and favour composition over inheritance.
+- Guard platform-specific code with the appropriate `#if YUP_<PLATFORM>` macros and provide functional Windows implementations plus stubs elsewhere.
+- Surface errors through `yup::Result`/`yup::ResultValue<T>` patterns and mirror renderer errors via `RiveOffscreenRenderer::getLastError()` in Python exceptions.
+- Document all public APIs with Doxygen comments and maintain American English spelling (`color`, `center`, etc.).
+
+## Testing Expectations
+- Extend GoogleTest coverage for C++ changes and `pytest` suites for Python updates. Provide mocks when native dependencies (NDI, GPU) are unavailable in CI.
+- Coordinate integration testing across the renderer and Python orchestration layers; smoke-test the pybind11 bindings feeding the orchestrator when possible.
+- When touching test infrastructure, respect the skip markers and helper utilities in `python/tests/` to keep environments without the native extension passing.
 
 ## Current Priorities
-1. **Documentation & developer tooling**
-   - Expand `docs/` with Windows 11 build instructions for the renderer, Python binding, and NDI orchestrator usage.
-   - Update `justfile` or add scripts in `tools/` describing end-to-end workflows (configure VS environment, build wheel, run tests).
-2. **Integration testing**
-   - Plan combined smoke tests that exercise the pybind11 module feeding the orchestrator (mocks acceptable for automation; document manual NDI validation).
-3. **Performance validation**
-   - Profile frame throughput and ensure zero-copy semantics across the renderer → Python boundary when running on Windows hardware.
+1. **Documentation & tooling:** Expand Windows-specific build instructions in `docs/` and automate wheel packaging and orchestration workflows via `tools/` or updated `just` recipes.
+2. **Integration testing:** Add or extend combined tests that exercise the renderer bindings feeding the NDI orchestrator (mocked senders acceptable in CI).
+3. **Performance validation:** Profile renderer → Python throughput to ensure zero-copy semantics on Windows hardware.
 
 ## Workflow Expectations
-- **Analyse before coding:** survey existing helpers (e.g., `modules/yup_graphics/`, `modules/yup_core/`) before introducing new abstractions; reuse utilities whenever possible.
-- **Code style:** adhere to Allman braces, JUCE-style naming, and include-order conventions outlined in `CLAUDE.md`. Add Doxygen for new public APIs.
-- **Error handling:** use RAII for graphics resources, propagate detailed errors through `RiveOffscreenRenderer::getLastError()` and mirror them in Python exceptions.
-- **Testing:** accompany new functionality with deterministic GoogleTests or `pytest` cases. Provide mocks when native dependencies (NDI, GPU) are unavailable in CI.
-- **Windows focus:** keep build flags, documentation, and scripts aligned with Windows 11 + MSVC 2022; non-Windows paths should remain stubs without extra investment.
-- **Change scope:** keep commits targeted—avoid formatting-only edits and unrelated subsystem changes.
+- Analyse existing helpers (e.g., `modules/yup_graphics/`, `modules/yup_core/`) before introducing new abstractions; reuse utilities wherever feasible.
+- Keep build flags, documentation, and scripts aligned with Windows 11 + MSVC 2022 assumptions. Non-Windows builds may remain stubbed but must compile.
+- Maintain focused change sets—avoid formatting-only commits and unrelated subsystem modifications.
 
 Stay focused on delivering a polished Windows pipeline from Rive rendering through Python-based NDI streaming while maintaining clear documentation for future contributors.
