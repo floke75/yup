@@ -93,6 +93,7 @@
 #include "widgets/yup_ComboBox.h"
 #include "artboard/yup_ArtboardFile.h"
 #include "artboard/yup_Artboard.h"
+#include "artboard/yup_RiveOffscreenRenderer.h"
 #include "windowing/yup_DocumentWindow.h"
 #include "dialogs/yup_FileChooser.h"
 

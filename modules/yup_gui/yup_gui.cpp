@@ -144,6 +144,7 @@
 #include "widgets/yup_ComboBox.cpp"
 #include "artboard/yup_ArtboardFile.cpp"
 #include "artboard/yup_Artboard.cpp"
+#include "artboard/yup_RiveOffscreenRenderer.cpp"
 #include "windowing/yup_DocumentWindow.cpp"
 #include "dialogs/yup_FileChooser.cpp"
 #include "themes/yup_ApplicationTheme.cpp"
