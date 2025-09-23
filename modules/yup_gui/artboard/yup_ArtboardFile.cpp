@@ -19,19 +19,56 @@
   ==============================================================================
 */
 
+#include "yup_gui.h"
+
+#include "artboard/yup_ArtboardFile.h"
+
+#include "yup_core/containers/yup_MemoryBlock.h"
+
+#include "rive/assets/file_asset.hpp"
+#include "rive/file.hpp"
+#include "rive/simple_array.hpp"
+
+#include <utility>
+#include <vector>
+
 namespace yup
 {
 
 namespace
 {
 
-//==============================================================================
+[[nodiscard]] bool decodeAssetFromBytes (rive::FileAsset& asset,
+                                         Span<const uint8> bytes,
+                                         rive::Factory& factory)
+{
+    if (bytes.empty())
+        return false;
+
+    rive::SimpleArray<uint8_t> data (bytes.data(), bytes.size());
+    return asset.decode (data, &factory);
+}
+
+[[nodiscard]] bool decodeAssetFromFile (const File& file,
+                                        rive::FileAsset& asset,
+                                        rive::Factory& factory)
+{
+    if (! file.existsAsFile())
+        return false;
+
+    MemoryBlock block;
+    if (! file.loadFileAsData (block))
+        return false;
+
+    rive::SimpleArray<uint8_t> data (static_cast<const uint8*> (block.getData()), block.getSize());
+    return asset.decode (data, &factory);
+}
 
 class LambdaAssetLoader : public rive::FileAssetLoader
 {
 public:
-    LambdaAssetLoader (const ArtboardFile::AssetLoadCallback& assetCallback)
-        : assetCallback (assetCallback)
+    LambdaAssetLoader (ArtboardFile::AssetLoadCallback assetCallbackIn)
+        : assetCallback (std::move (assetCallbackIn))
     {
     }
 
@@ -43,15 +80,80 @@ public:
 
         ArtboardFile::AssetInfo assetInfo;
         assetInfo.uniqueName = String (asset.uniqueName());
-        assetInfo.uniquePath = String (asset.uniqueFilename());
+        assetInfo.uniquePath = File (String (asset.uniqueFilename()));
         assetInfo.extension = String (asset.fileExtension());
 
-        return assetCallback (assetInfo, Span<const uint8> { inBandBytes.data(), inBandBytes.size() }, *factory);
+        return assetCallback (
+            assetInfo,
+            asset,
+            Span<const uint8> { inBandBytes.data(), inBandBytes.size() },
+            *factory);
     }
 
 private:
     ArtboardFile::AssetLoadCallback assetCallback;
 };
+
+[[nodiscard]] ArtboardFile::AssetLoadCallback makeDefaultAssetLoader (const File& baseDirectory)
+{
+    return [baseDirectory] (const ArtboardFile::AssetInfo& info,
+                            rive::FileAsset& asset,
+                            Span<const uint8> inBandBytes,
+                            rive::Factory& factory)
+    {
+        if (decodeAssetFromBytes (asset, inBandBytes, factory))
+            return true;
+
+        if (! baseDirectory.isDirectory())
+            return false;
+
+        std::vector<File> candidates;
+        const auto uniqueFilename = String (asset.uniqueFilename());
+        if (uniqueFilename.isNotEmpty())
+            candidates.push_back (baseDirectory.getChildFile (uniqueFilename));
+
+        const auto infoPath = info.uniquePath;
+        if (infoPath.getFullPathName().isNotEmpty())
+        {
+            if (infoPath.isAbsolutePath())
+                candidates.push_back (infoPath);
+            else
+                candidates.push_back (baseDirectory.getChildFile (infoPath.getFullPathName()));
+        }
+
+        if (info.uniqueName.isNotEmpty() && info.extension.isNotEmpty())
+            candidates.push_back (baseDirectory.getChildFile (info.uniqueName + "." + info.extension));
+
+        for (const auto& candidate : candidates)
+        {
+            if (decodeAssetFromFile (candidate, asset, factory))
+                return true;
+        }
+
+        return false;
+    };
+}
+
+[[nodiscard]] ArtboardFile::AssetLoadCallback combineAssetCallbacks (ArtboardFile::AssetLoadCallback primary,
+                                                                     ArtboardFile::AssetLoadCallback fallback)
+{
+    if (! primary)
+        return fallback;
+
+    if (! fallback)
+        return primary;
+
+    return [primary = std::move (primary), fallback = std::move (fallback)] (const ArtboardFile::AssetInfo& info,
+                                                                             rive::FileAsset& asset,
+                                                                             Span<const uint8> bytes,
+                                                                             rive::Factory& factory)
+    {
+        if (primary (info, asset, bytes, factory))
+            return true;
+
+        return fallback (info, asset, bytes, factory);
+    };
+}
 
 } // namespace
 
@@ -78,7 +180,7 @@ rive::File* ArtboardFile::getRiveFile()
 
 ArtboardFile::LoadResult ArtboardFile::load (const File& file, rive::Factory& factory)
 {
-    return load (file, factory, nullptr);
+    return load (file, factory, AssetLoadCallback());
 }
 
 ArtboardFile::LoadResult ArtboardFile::load (const File& file, rive::Factory& factory, const AssetLoadCallback& assetCallback)
@@ -90,14 +192,15 @@ ArtboardFile::LoadResult ArtboardFile::load (const File& file, rive::Factory& fa
     if (is == nullptr || ! is->openedOk())
         return LoadResult::fail ("Failed to open artboard file for reading");
 
-    return load (*is, factory, assetCallback);
+    auto effectiveCallback = combineAssetCallbacks (assetCallback, makeDefaultAssetLoader (file.getParentDirectory()));
+    return load (*is, factory, effectiveCallback);
 }
 
 //==============================================================================
 
 ArtboardFile::LoadResult ArtboardFile::load (InputStream& is, rive::Factory& factory)
 {
-    return load (is, factory, nullptr);
+    return load (is, factory, AssetLoadCallback());
 }
 
 ArtboardFile::LoadResult ArtboardFile::load (InputStream& is, rive::Factory& factory, const AssetLoadCallback& assetCallback)
@@ -108,21 +211,13 @@ ArtboardFile::LoadResult ArtboardFile::load (InputStream& is, rive::Factory& fac
     rive::ImportResult result;
     std::unique_ptr<rive::File> rivFile;
 
-    if (assetCallback != nullptr)
-    {
-        rivFile = rive::File::import (
-            { static_cast<const uint8_t*> (mb.getData()), mb.getSize() },
-            std::addressof (factory),
-            std::addressof (result),
-            rive::make_rcp<LambdaAssetLoader> (assetCallback));
-    }
-    else
-    {
-        rivFile = rive::File::import (
-            { static_cast<const uint8_t*> (mb.getData()), mb.getSize() },
-            std::addressof (factory),
-            std::addressof (result));
-    }
+    auto effectiveCallback = combineAssetCallbacks (assetCallback, makeDefaultAssetLoader (File {}));
+
+    rivFile = rive::File::import (
+        { static_cast<const uint8_t*> (mb.getData()), mb.getSize() },
+        std::addressof (factory),
+        std::addressof (result),
+        rive::make_rcp<LambdaAssetLoader> (effectiveCallback));
 
     if (result == rive::ImportResult::malformed)
         return LoadResult::fail ("Malformed artboard file");

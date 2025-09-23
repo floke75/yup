@@ -79,6 +79,7 @@ class NDIStreamConfig:
     sender_options: MutableMapping[str, Any] = field(default_factory=dict)
     renderer_options: MutableMapping[str, Any] = field(default_factory=dict)
     metadata: MutableMapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    state_machine_inputs: MutableMapping[str, Any] = field(default_factory=dict)
     use_async_send: bool = True
 
     def __post_init__ (self) -> None:
@@ -98,6 +99,30 @@ class NDIStreamConfig:
             self.frame_rate = Fraction(self.frame_rate).limit_denominator()
         elif self.frame_rate is not None and not isinstance(self.frame_rate, Fraction):
             raise TypeError("frame_rate must be a Fraction, float, tuple, or None")
+
+
+def _set_state_machine_input(renderer: Any, name: str, value: Any) -> bool:
+    if isinstance(value, bool):
+        setter = getattr(renderer, "set_bool_input", None)
+        if not callable(setter):
+            raise RuntimeError("Renderer does not expose set_bool_input")
+        return bool(setter(name, value))
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        setter = getattr(renderer, "set_number_input", None)
+        if not callable(setter):
+            raise RuntimeError("Renderer does not expose set_number_input")
+        return bool(setter(name, float(value)))
+
+    if isinstance(value, str) and value.lower() == "trigger":
+        trigger = getattr(renderer, "fire_trigger_input", None)
+        if not callable(trigger):
+            trigger = getattr(renderer, "fire_trigger", None)
+        if not callable(trigger):
+            raise RuntimeError("Renderer does not expose trigger inputs")
+        return bool(trigger(name))
+
+    raise ValueError("Unsupported input value type")
 
 
 class _NDIStream:
@@ -188,14 +213,9 @@ class _NDIStream:
             input_name = parameters.get("name")
             if not input_name:
                 raise ValueError("set_input requires a 'name' parameter")
-            value = parameters.get("value")
-            if isinstance(value, bool):
-                return self.renderer.set_bool_input(input_name, value)
-            if isinstance(value, (int, float)):
-                return self.renderer.set_number_input(input_name, float(value))
-            if value == "trigger":
-                return self.renderer.fire_trigger(input_name)
-            raise ValueError("Unsupported input value type")
+            if "value" not in parameters:
+                raise ValueError("set_input requires a 'value' parameter")
+            return _set_state_machine_input(self.renderer, input_name, parameters["value"])
 
         raise ValueError(f"Unknown control action: {action}")
 
@@ -398,6 +418,12 @@ class NDIOrchestrator:
             ok = renderer.play_state_machine(config.state_machine)
             if not ok:
                 raise RuntimeError(f"Failed to start state machine '{config.state_machine}'")
+
+        if config.state_machine_inputs:
+            for name, value in config.state_machine_inputs.items():
+                success = _set_state_machine_input(renderer, name, value)
+                if not success:
+                    raise RuntimeError(f"Failed to set state machine input '{name}'")
 
         if hasattr(renderer, "set_paused"):
             renderer.set_paused(False)

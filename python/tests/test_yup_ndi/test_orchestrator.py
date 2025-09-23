@@ -63,9 +63,13 @@ class FakeRenderer:
         self.number_inputs[name] = value
         return True
 
-    def fire_trigger (self, name: str) -> bool:
+    def fire_trigger_input (self, name: str) -> bool:
         self.triggers.append(name)
         return True
+
+    def fire_trigger (self, name: str) -> bool:
+        # Legacy name maintained to verify fallback behaviour.
+        return self.fire_trigger_input(name)
 
     def advance (self, delta_seconds: float) -> bool:
         self.advanced.append(delta_seconds)
@@ -225,6 +229,66 @@ def test_apply_stream_control_handles_common_actions () -> None:
 
     with pytest.raises(ValueError):
         orchestrator.apply_stream_control("control", "unknown")
+
+
+def test_initial_state_machine_inputs_are_applied () -> None:
+    factories = FakeFactories()
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        timestamp_mapper=lambda seconds: 0,
+        time_provider=lambda: 0.0,
+    )
+
+    config = NDIStreamConfig(
+        name="init",
+        width=2,
+        height=2,
+        riv_bytes=b"riv",
+        state_machine="controller",
+        state_machine_inputs={"armed": True, "level": 0.5, "bang": "trigger"},
+    )
+
+    orchestrator.add_stream(config)
+
+    renderer = factories.renderers["init"]
+    assert renderer.state_machines == ["controller"]
+    assert renderer.bool_inputs["armed"] is True
+    assert renderer.number_inputs["level"] == pytest.approx(0.5)
+    assert renderer.triggers == ["bang"]
+
+
+def test_initial_input_failure_raises_runtime_error () -> None:
+    class RejectingRenderer(FakeRenderer):
+        def set_bool_input (self, name: str, value: bool) -> bool:
+            super().set_bool_input(name, value)
+            return False
+
+    class RejectingFactories(FakeFactories):
+        def renderer (self, config: NDIStreamConfig) -> FakeRenderer:
+            renderer = RejectingRenderer(config.width, config.height)
+            self.renderers[config.name] = renderer
+            return renderer
+
+    factories = RejectingFactories()
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        timestamp_mapper=lambda seconds: 0,
+        time_provider=lambda: 0.0,
+    )
+
+    config = NDIStreamConfig(
+        name="reject",
+        width=2,
+        height=2,
+        riv_bytes=b"riv",
+        state_machine="controller",
+        state_machine_inputs={"armed": True},
+    )
+
+    with pytest.raises(RuntimeError):
+        orchestrator.add_stream(config)
 
 
 def test_dispatch_control_invokes_registered_handler () -> None:
