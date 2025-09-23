@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
+from types import SimpleNamespace
 from typing import Any, Dict, Mapping, Optional
 
 import pytest
 
 from yup_ndi import NDIOrchestrator, NDIStreamConfig
+import yup_ndi.orchestrator as orchestrator_module
 
 
 class FakeRenderer:
@@ -265,3 +268,265 @@ def test_invalid_configuration_rejected () -> None:
 
     with pytest.raises(TypeError):
         NDIStreamConfig(name="bad", width=1, height=1, riv_bytes=b"riv", frame_rate="fast")  # type: ignore[arg-type]
+
+
+def test_acquire_frame_view_prefers_zero_copy_memoryview () -> None:
+    class ViewRenderer(FakeRenderer):
+        def __init__ (self, width: int, height: int) -> None:
+            super().__init__(width, height)
+            self._buffer = bytearray(range(width * height * 4))
+            self.get_bytes_called = False
+
+        def acquire_frame_view (self) -> memoryview:
+            return memoryview(self._buffer).cast("B", (self._height, self._width, 4))
+
+        def get_frame_bytes (self) -> bytes:
+            self.get_bytes_called = True
+            return bytes(self._buffer)
+
+    class RecordingSender:
+        def __init__ (self) -> None:
+            self.buffers: list[memoryview] = []
+            self.dimensions: list[tuple[int, int, int]] = []
+
+        def send (self, buffer: memoryview, width: int, height: int, stride: int, timestamp: int) -> None:
+            self.buffers.append(buffer)
+            self.dimensions.append((width, height, stride))
+
+        def apply_metadata (self, metadata: Mapping[str, Mapping[str, Any]]) -> None:
+            pass
+
+        def close (self) -> None:
+            pass
+
+    sender = RecordingSender()
+
+    orchestrator = NDIOrchestrator(
+        renderer_factory=lambda config: ViewRenderer(config.width, config.height),
+        sender_factory=lambda config, renderer: sender,
+        timestamp_mapper=lambda seconds: int(seconds * 1_000_000),
+        time_provider=lambda: 0.0,
+    )
+
+    config = NDIStreamConfig(name="view", width=2, height=2, riv_bytes=b"riv")
+    orchestrator.add_stream(config)
+
+    progressed = orchestrator.advance_stream("view", 0.1)
+    assert progressed is True
+
+    assert sender.buffers, "Expected sender to receive a memoryview"
+    buffer = sender.buffers[-1]
+    assert isinstance(buffer, memoryview)
+    assert buffer.format == "B"
+    assert buffer.readonly is False
+    assert buffer.obj is orchestrator._streams["view"].renderer._buffer  # type: ignore[attr-defined]
+    assert bytes(buffer) == bytes(range(16))
+
+    renderer = orchestrator._streams["view"].renderer  # type: ignore[assignment]
+    assert isinstance(renderer, ViewRenderer)
+    assert renderer.get_bytes_called is False
+
+
+def test_stream_close_stops_renderer_even_if_sender_close_fails () -> None:
+    class StopAwareRenderer(FakeRenderer):
+        def __init__ (self, width: int, height: int) -> None:
+            super().__init__(width, height)
+            self.stop_calls = 0
+
+        def stop (self) -> None:
+            self.stop_calls += 1
+
+    class FaultySender:
+        def send (self, buffer: memoryview, width: int, height: int, stride: int, timestamp: int) -> None:
+            pass
+
+        def apply_metadata (self, metadata: Mapping[str, Mapping[str, Any]]) -> None:
+            pass
+
+        def close (self) -> None:
+            raise RuntimeError("boom")
+
+    renderer = StopAwareRenderer(2, 2)
+    orchestrator = NDIOrchestrator(
+        renderer_factory=lambda config: renderer,
+        sender_factory=lambda config, renderer: FaultySender(),
+        timestamp_mapper=lambda seconds: 0,
+        time_provider=lambda: 0.0,
+    )
+
+    orchestrator.add_stream(NDIStreamConfig(name="unstable", width=2, height=2, riv_bytes=b"riv"))
+
+    with pytest.raises(RuntimeError):
+        orchestrator.remove_stream("unstable")
+
+    assert renderer.stop_calls == 1
+    assert orchestrator.list_streams() == []
+
+
+def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyPatch) -> None:
+    created_renderers: list[Any] = []
+    sender_handles: list[Any] = []
+
+    class StubRenderer:
+        def __init__ (self, width: int, height: int) -> None:
+            self.width = width
+            self.height = height
+            self.row_stride = width * 4
+            self.loaded: Optional[bytes] = None
+            self.artboard: Optional[str] = None
+            self.played_animation: Optional[tuple[str, bool]] = None
+            self.played_state_machine: Optional[str] = None
+            self.paused = True
+            self.advanced: list[float] = []
+            self.stopped = False
+            self._frame = bytearray(range(width * height * 4))
+            created_renderers.append(self)
+
+        def is_valid (self) -> bool:
+            return True
+
+        def load_file (self, path: str, artboard: Optional[str]) -> None:
+            raise AssertionError("load_file should not be called in this test")
+
+        def load_bytes (self, data: bytes, artboard: Optional[str]) -> None:
+            self.loaded = bytes(data)
+            self.artboard = artboard
+
+        def play_animation (self, name: str, loop: bool = True) -> bool:
+            self.played_animation = (name, loop)
+            return True
+
+        def play_state_machine (self, name: str) -> bool:
+            self.played_state_machine = name
+            return True
+
+        def set_paused (self, value: bool) -> None:
+            self.paused = value
+
+        def advance (self, delta_seconds: float) -> bool:
+            self.advanced.append(delta_seconds)
+            return True
+
+        def get_width (self) -> int:
+            return self.width
+
+        def get_height (self) -> int:
+            return self.height
+
+        def get_row_stride (self) -> int:
+            return self.row_stride
+
+        def get_frame_bytes (self) -> memoryview:
+            return memoryview(self._frame)
+
+        def stop (self) -> None:
+            self.stopped = True
+
+    class StubVideoFrame:
+        def __init__ (self) -> None:
+            self.fourcc: Optional[str] = None
+            self.resolutions: list[tuple[int, int]] = []
+            self.frame_rate: Optional[Fraction] = None
+            self.ptr = SimpleNamespace(timestamp=None)
+
+        def set_fourcc (self, fourcc: str) -> None:
+            self.fourcc = fourcc
+
+        def set_resolution (self, width: int, height: int) -> None:
+            self.resolutions.append((width, height))
+
+        def set_frame_rate (self, frame_rate: Fraction) -> None:
+            self.frame_rate = frame_rate
+
+    class StubSender:
+        def __init__ (self, name: str, ndi_groups: str = "", **kwargs: Any) -> None:
+            self.name = name
+            self.ndi_groups = ndi_groups
+            self.kwargs = kwargs
+            self.video_frame: Optional[StubVideoFrame] = None
+            self.open_called = False
+            self.video_payloads: list[memoryview] = []
+            self.sent_async = False
+            self.sent_sync = False
+            self.metadata: list[tuple[str, Mapping[str, Any]]] = []
+            self.closed = False
+            sender_handles.append(self)
+
+        def set_video_frame (self, frame: StubVideoFrame) -> None:
+            self.video_frame = frame
+
+        def open (self) -> None:
+            self.open_called = True
+
+        def write_video (self, buffer: memoryview) -> None:
+            self.video_payloads.append(buffer)
+
+        def send_video_async (self) -> None:
+            self.sent_async = True
+
+        def send_video (self) -> None:
+            self.sent_sync = True
+
+        def send_metadata (self, tag: str, attrs: Mapping[str, Any]) -> None:
+            self.metadata.append((tag, dict(attrs)))
+
+        def close (self) -> None:
+            self.closed = True
+
+    class StubFourCC:
+        BGRA = "BGRA"
+
+    class StubCyndiLib:
+        Sender = StubSender
+        VideoSendFrame = StubVideoFrame
+        FourCC = StubFourCC
+
+    monkeypatch.setattr(orchestrator_module, "RiveOffscreenRenderer", StubRenderer)
+    monkeypatch.setattr(orchestrator_module, "cyndilib", StubCyndiLib())
+
+    orchestrator = NDIOrchestrator()
+
+    config = NDIStreamConfig(
+        name="default",
+        width=2,
+        height=2,
+        riv_bytes=b"riv bytes",
+        animation="spin",
+        loop_animation=False,
+        metadata={"ndi": {"title": "demo"}},
+        frame_rate=Fraction(30000, 1001),
+    )
+
+    orchestrator.add_stream(config)
+
+    assert created_renderers, "Renderer factory should have been invoked"
+    renderer = created_renderers[-1]
+    assert renderer.loaded == b"riv bytes"
+    assert renderer.artboard is None
+    assert renderer.played_animation == ("spin", False)
+    assert renderer.played_state_machine is None
+    assert renderer.paused is False
+
+    assert sender_handles, "Sender factory should have been invoked"
+    sender = sender_handles[-1]
+    assert sender.video_frame is not None
+    assert sender.video_frame.fourcc == "BGRA"
+    assert sender.video_frame.resolutions[-1] == (2, 2)
+    assert sender.open_called is True
+
+    progressed = orchestrator.advance_stream("default", 0.25, timestamp=1.0)
+    assert progressed is True
+    assert renderer.advanced == [0.25]
+    assert sender.video_payloads, "Sender should have received a frame payload"
+    payload = sender.video_payloads[-1]
+    assert isinstance(payload, memoryview)
+    assert bytes(payload) == bytes(range(16))
+    assert sender.sent_async is True
+    assert sender.sent_sync is False
+
+    assert sender.metadata == [("ndi", {"title": "demo"})]
+
+    orchestrator.remove_stream("default")
+
+    assert renderer.stopped is True
+    assert sender.closed is True
