@@ -29,13 +29,28 @@ set (target_version "1.0.0")
 
 project (${target_name} VERSION ${target_version})
 
+if (NOT DEFINED YUP_ENABLE_AUDIO_MODULES)
+    set (YUP_ENABLE_AUDIO_MODULES ON)
+endif()
+
 # ==== Prepare Android build
 if (ANDROID)
     include (../../cmake/yup.cmake)
-    yup_add_default_modules ("${CMAKE_CURRENT_LIST_DIR}/../..")
+    yup_add_default_modules ("${CMAKE_CURRENT_LIST_DIR}/../.."
+        ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
 endif()
 
 # ==== Prepare target
+set (example_modules
+    yup::yup_core
+    yup::yup_events)
+
+if (YUP_ENABLE_AUDIO_MODULES)
+    list (INSERT example_modules 1
+        yup::yup_audio_basics
+        yup::yup_audio_devices)
+endif()
+
 yup_standalone_app (
     TARGET_NAME ${target_name}
     TARGET_VERSION ${target_version}
@@ -44,10 +59,7 @@ yup_standalone_app (
     TARGET_APP_NAMESPACE "org.yup"
     TARGET_CONSOLE ON
     MODULES
-        yup::yup_core
-        yup::yup_audio_basics
-        yup::yup_audio_devices
-        yup::yup_events)
+        ${example_modules})
 
 # ==== Prepare sources
 if (NOT YUP_TARGET_ANDROID)

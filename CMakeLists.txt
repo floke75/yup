@@ -59,7 +59,7 @@ if (YUP_EXPORT_MODULES)
         set (enable_python OFF)
     endif()
 
-    yup_add_default_modules (${CMAKE_CURRENT_LIST_DIR} ENABLE_PYTHON ${enable_python})
+    yup_add_default_modules (${CMAKE_CURRENT_LIST_DIR} ENABLE_PYTHON ${enable_python} ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
 endif()
 
 # Enable profiling

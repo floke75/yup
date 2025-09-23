@@ -29,6 +29,15 @@ set (target_version "1.0.0")
 
 project (${target_name} VERSION ${target_version})
 
+if (NOT DEFINED YUP_ENABLE_AUDIO_MODULES)
+    set (YUP_ENABLE_AUDIO_MODULES ON)
+endif()
+
+if (NOT YUP_ENABLE_AUDIO_MODULES)
+    message (STATUS "YUP -- Skipping plugin example because audio modules are disabled")
+    return()
+endif()
+
 yup_audio_plugin (
     TARGET_NAME ${target_name}
     TARGET_VERSION ${target_version}
