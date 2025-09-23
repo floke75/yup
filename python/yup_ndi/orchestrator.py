@@ -1,4 +1,13 @@
-"""Utilities for publishing Rive frames over NDI."""
+"""Utilities for publishing Rive frames over NDI.
+
+This module will be the backbone of the refactored codebase. Keep the surface
+area small and deliberate: the orchestrator depends only on the renderer
+bindings exposed by :mod:`yup_rive_renderer` plus sender adapters. When pruning
+legacy YUP systems, ensure factories supplied here still build renderers that
+implement the methods exercised by the pytest suite. Leave this docstring in
+place (and extend it when workflow nuances arise) to remind maintainers that
+casual deletions can sever the renderer ↔ NDI flow.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -109,6 +118,10 @@ class _NDIStream:
         self._time_provider = time_provider
 
     def advance_and_send (self, delta_seconds: float, timestamp: Optional[float]) -> bool:
+        # NOTE: This method is the critical frame pump. Any future refactor that
+        # introduces batching or async uploads must either keep this call path or
+        # update the Python tests/NDI adapters in lockstep. Expect downstream
+        # tooling (REST/OSC shims, CLI demos) to import this logic directly.
         now = timestamp if timestamp is not None else self._time_provider()
         ndi_timestamp = self._timestamp_mapper(now)
 
@@ -132,6 +145,10 @@ class _NDIStream:
                 _logger.exception("acquire_frame_view failed; falling back to get_frame_bytes")
 
         frame_bytes = self.renderer.get_frame_bytes()
+        # NOTE: Some legacy renderers may still expose mutable buffers. Until the
+        # refactor removes those paths, keep this conversion defensive and prefer
+        # zero-copy views when safe. Coordinate any signature changes with
+        # `python/tests/test_yup_ndi` fixtures and the pybind11 wrapper.
         if isinstance(frame_bytes, memoryview):
             return frame_bytes.cast("B")
         if isinstance(frame_bytes, (bytes, bytearray)):  # zero-copy read-only in CPython
