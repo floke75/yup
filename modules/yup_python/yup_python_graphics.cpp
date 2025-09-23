@@ -20,3 +20,4 @@
 */
 
 #include "bindings/yup_YupGraphics_bindings.cpp"
+#include "bindings/yup_RiveOffscreenRenderer_bindings.cpp"

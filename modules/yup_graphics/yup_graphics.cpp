@@ -110,3 +110,4 @@
 #include "graphics/yup_Colors.cpp"
 #include "graphics/yup_Graphics.cpp"
 #include "drawables/yup_Drawable.cpp"
+#include "offscreen/yup_RiveOffscreenRenderer.cpp"

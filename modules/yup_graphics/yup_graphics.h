@@ -88,3 +88,4 @@ YUP_END_IGNORE_WARNINGS_GCC_LIKE
 #include "graphics/yup_Graphics.h"
 #include "context/yup_GraphicsContext.h"
 #include "drawables/yup_Drawable.h"
+#include "offscreen/yup_RiveOffscreenRenderer.h"

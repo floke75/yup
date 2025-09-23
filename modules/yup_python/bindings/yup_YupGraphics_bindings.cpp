@@ -2026,6 +2026,8 @@ void registerYupGraphicsBindings (py::module_& m)
     submoduleColors.attr ("whitesmoke") = Colors::whitesmoke;
     submoduleColors.attr ("yellow") = Colors::yellow;
     submoduleColors.attr ("yellowgreen") = Colors::yellowgreen;
+
+    registerRiveOffscreenRendererBindings (m);
 }
 
 // clang-format on

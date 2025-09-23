@@ -37,6 +37,7 @@ namespace yup::Bindings
 // =================================================================================================
 
 void registerYupGraphicsBindings (pybind11::module_& m);
+void registerRiveOffscreenRendererBindings (pybind11::module_& m);
 
 // =================================================================================================
 
