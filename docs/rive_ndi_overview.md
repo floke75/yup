@@ -1,69 +1,76 @@
 # Rive → NDI Pipeline Overview (Windows)
 
-This guide documents the Windows-focused workflow for turning Rive animations into NDI video streams using YUP.
-It highlights the current code locations, the components that are still landing, and how they are expected to fit together.
+This guide summarises the Windows-focused workflow for turning Rive animations into NDI video streams
+with YUP. The renderer, Python bindings, and orchestrator are fully implemented; this document links
+those components together and highlights the build/test steps that keep them aligned.
 
-## Goals For The Windows Pipeline
-- **Headless Direct3D 11 Rendering:** Extend `yup::RiveOffscreenRenderer` so it can initialise a swapchain-free D3D11 device, render artboards into BGRA textures, and provide deterministic CPU readback of each frame.
-- **Python-Friendly Surface:** Shape a pybind11 layer (planned in `python/`) that exposes animation loading/control and frame retrieval APIs tailored for automation agents.
-- **NDI Transmission:** Wrap the renderer output with a lightweight Python control layer that forwards BGRA frames to NDI via the forthcoming wrapper module.
-- **Minimal Footprint:** Focus builds on the renderer/NDI stack by disabling unrelated audio and plugin systems, keeping iteration times tight on Windows.
+## What Ships Today
+- **Headless Direct3D 11 rendering:** `yup::RiveOffscreenRenderer` initialises a swapchain-free D3D11
+device, renders Rive artboards into BGRA textures, and exposes deterministic CPU readback.
+- **Python binding surface:** The `yup_rive_renderer` module mirrors the renderer API, including
+zero-copy frame views that the orchestrator can forward directly to NDI senders.
+- **NDI orchestration:** The `yup_ndi` package manages multiple renderers, maintains timing metadata,
+forwards frames to `cyndilib` senders, and provides runtime control hooks.
+- **Focused test coverage:** GoogleTests validate renderer invariants while `pytest` suites exercise
+the binding and orchestrator behaviour using fake senders/renderers so CI does not require GPU or NDI
+DLLs.
 
 ## Key Source Locations
-| Component | Purpose | Current / Planned Location |
+| Component | Purpose | Location |
 | --- | --- | --- |
-| Offscreen renderer core | Implements Direct3D 11 setup, Rive artboard rendering, and frame readback. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp` |
-| Python binding layer | Provides `pybind11` bindings for loading `.riv` files, advancing animations, and fetching BGRA frames. | `python/` (new module: _TBD name_) |
-| NDI sender wrapper | Bridges Python frames into NDI streams, coordinating lifecycle and multi-stream publishing. | `python/` (new wrapper package planned) |
+| Offscreen renderer core | Direct3D 11 setup, artboard control, BGRA readback. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.*` |
+| Python binding layer | pybind11 module that exposes renderer APIs and memory views. | `python/src/yup_rive_renderer.cpp` |
+| NDI orchestrator | Coordinates renderers and NDI senders, including metadata/control plumbing. | `python/yup_ndi/orchestrator.py` |
+| Tests | Renderer GoogleTests plus Python binding/orchestrator suites. | `tests/yup_gui/`, `python/tests/` |
 
-## How The Pieces Fit Together
-1. **Render Frames:** `yup::RiveOffscreenRenderer` manages the Direct3D 11 device, renders the requested artboard/animation into an offscreen texture, and exposes CPU-readable BGRA data.
-2. **Expose To Python:** The pybind11 module loads `.riv` assets, drives animations (state machines or timelines), and exposes each rendered frame as a Python-accessible buffer or NumPy array.
-3. **Publish Over NDI:** The forthcoming NDI wrapper subscribes to frames from the binding layer, converts timing metadata, and pushes them to `cyndilib`'s `Sender`, enabling multi-instance streaming. Optional REST/OSC endpoints can sit above this layer for remote control.
+## How the Pieces Fit Together
+1. **Render Frames:** `RiveOffscreenRenderer` manages the GPU context, loads `.riv` assets, and renders
+into an offscreen BGRA texture.
+2. **Expose to Python:** The `yup_rive_renderer` extension loads files, advances scenes, and returns
+frames as bytes or `memoryview` objects without copying when possible.
+3. **Publish over NDI:** `yup_ndi.NDIOrchestrator` instantiates renderers, maps timestamps into the
+100 ns NDI domain, forwards frames to `cyndilib` senders, and applies metadata/control commands.
 
-The intent is to keep the renderer performant and deterministic while letting Python orchestrate scheduling, IO, and integrations.
+The pipeline is designed so that Python orchestrates playback while the renderer handles all GPU
+work. Any API adjustment in the renderer must be mirrored in the binding and orchestrator to keep the
+tests green.
 
 ## Recommended Build Configuration (Windows)
-Use the focused set of CMake options below when configuring Visual Studio builds:
+Use the following flags when generating Visual Studio projects that target the Rive → NDI workflow:
 
-```bash
-cmake -S . -B build-rive-ndi-win \
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
   -DYUP_ENABLE_AUDIO_MODULES=OFF \
-  -DYUP_ENABLE_PLUGIN_MODULES=OFF \
-  -DYUP_ENABLE_EXAMPLES=OFF
+  -DYUP_BUILD_TESTS=ON \
+  -DYUP_BUILD_EXAMPLES=OFF
 ```
 
-These flags trim unrelated subsystems and speed up compilation while you iterate on the renderer, bindings, and NDI layer. Additional feature toggles can stay at their defaults unless you need them for debugging.
+Disable the legacy audio modules to shorten build times; tests remain available for the renderer and
+Python components. Invoke `cmake --build build --config Release` (or `Debug`) to compile the native
+targets.
 
-### Audio Module Toggle
+### Python Wheel Builds
+The Python wheel embeds the renderer bindings and orchestrator:
 
-The renderer/NDI stack stays leanest when the legacy audio toolchain is excluded. Set `YUP_ENABLE_AUDIO_MODULES=OFF` at configure time to keep the build focused on graphics and Python:
-
-```bash
-cmake -S . -B build-rive-ndi-win \
-  -DYUP_ENABLE_AUDIO_MODULES=OFF
+```powershell
+just python_wheel
 ```
 
-Python wheel builds respect the same switch via an environment variable. When creating artifacts for automation hosts, export the variable before invoking `pip` or `python -m build`:
+The recipe uses `python -m build --wheel`, reinstalls the package, and runs the Python tests. Set the
+`YUP_ENABLE_AUDIO_MODULES=0` environment variable before invoking the build if you want wheels that
+exclude audio modules entirely.
 
-```bash
-set YUP_ENABLE_AUDIO_MODULES=0
-python -m build python
-```
+### Smoke Tests
+`just python_smoke` executes:
+- `python/tests/test_yup_rive_renderer/test_binding_interface.py`
+- `python/tests/test_yup_ndi/test_orchestrator.py`
 
-Use `1` to re-enable the audio modules if a downstream integration actually needs them.
+Both suites rely on in-repo fakes, so they run without a GPU or NDI runtime. Use them after any change
+that touches the renderer interface, binding layer, or orchestrator.
 
-## Streamlined Commands
-A `just rive_ndi_win` recipe (landing soon in the project `justfile`) will encapsulate the configuration and build steps above, plus invoke targeted tests for the renderer/binding/NDI stack. Once available, run:
-
-```bash
-just rive_ndi_win
-```
-
-Until the recipe is merged, execute the `cmake` configuration manually and build the `yup_gui` targets inside Visual Studio.
-
-## Next Steps For Contributors
-- Finish wiring Direct3D 11 BGRA readback within `RiveOffscreenRenderer`.
-- Implement the pybind11 module that surfaces renderer controls to Python.
-- Integrate the NDI sender wrapper and add smoke tests that validate frame emission.
-- Update documentation as the Python module and `just` recipe go live so downstream agents inherit the latest workflow.
+## Next Steps for Contributors
+- Continue refining documentation and tooling so Windows developers can provision environments quickly.
+- Plan integration smoke tests that combine the real renderer with `cyndilib` senders for manual NDI
+verification on hardware.
+- Profile throughput to confirm the zero-copy pathway meets frame-rate targets for production
+workloads.

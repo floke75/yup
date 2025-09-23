@@ -24,36 +24,40 @@ installed.
 
 ## 2. Configure and build the native renderer
 
-1. Configure the project with Visual Studio 2022 generators. Ninja Multi-Config also works,
-   but Visual Studio simplifies debugging and symbol inspection.
+1. Configure the project with Visual Studio 2022 generators. Disable the legacy audio
+   modules to shorten build times while keeping the renderer, bindings, and tests available.
 
    ```powershell
-   cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DYUP_ENABLE_PROFILING=OFF
+   cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
+     -DYUP_ENABLE_AUDIO_MODULES=OFF \
+     -DYUP_BUILD_TESTS=ON \
+     -DYUP_BUILD_EXAMPLES=OFF
    ```
 
-2. Build the default Debug configuration:
+2. Build the desired configuration:
+
+   ```powershell
+   cmake --build build --config Release --target ALL_BUILD
+   ```
+
+3. (Optional) Build the Debug configuration when preparing symbols for investigation:
 
    ```powershell
    cmake --build build --config Debug --target ALL_BUILD
    ```
 
-3. (Optional) Build the RelWithDebInfo configuration when preparing redistributable artefacts:
-
-   ```powershell
-   cmake --build build --config RelWithDebInfo --target ALL_BUILD
-   ```
-
 ## 3. Build and install the Python wheel
 
-1. From the repository root, build the wheel and install it into the active virtual
-environment:
+1. From the repository root, build the wheel, reinstall it into the active virtual
+   environment, and run the Python unit tests:
 
    ```powershell
    just python_wheel
    ```
 
    The recipe runs `python -m build --wheel`, reinstalls the freshly built package, and
-   executes the Python unit tests.
+   executes the Python unit tests. Export `YUP_ENABLE_AUDIO_MODULES=0` before invoking the
+   command if you want an audio-free wheel.
 
 2. To build only the wheel without reinstalling it, run the underlying command directly:
 
@@ -74,8 +78,8 @@ just python_smoke
 ```
 
 The command executes the targeted smoke tests with `-q` so that any failures surface
-immediately. The tests skip automatically when the native renderer or NDI dependencies
-are unavailable.
+immediately. The tests ship with fake renderer/sender implementations, so they succeed even
+when GPU or NDI runtimes are absent.
 
 ## 5. Package distributables
 

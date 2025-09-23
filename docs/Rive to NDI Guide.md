@@ -1,38 +1,117 @@
-# Rive → NDI Pipeline Guide (Preview)
+# Rive → NDI Pipeline Guide
 
-This guide is being prepared to document the workflow for streaming Rive animations to NDI using the YUP toolchain.
+This document describes the end-to-end workflow for streaming Rive animations to NDI using the YUP
+renderer, Python bindings, and orchestration utilities.
 
 > [!NOTE]
-> When configuring with `-DYUP_ENABLE_AUDIO_MODULES=OFF`, YUP automatically skips the audio-dependent console, app, graphics, and plugin samples as well as the CTest suite. This keeps the slimmed-down Rive→NDI workflow free from audio build requirements.
-
+> When configuring with `-DYUP_ENABLE_AUDIO_MODULES=OFF`, YUP skips the audio-dependent console, app,
+> graphics, and plugin samples as well as the CTest suite. This keeps the slimmed-down Rive → NDI
+> workflow free from audio build requirements.
+>
 > [!TIP]
-> Python wheels honour the same toggle. Set `YUP_ENABLE_AUDIO_MODULES=0` in your environment before running `python -m build python` (or `pip wheel`) to publish artifacts that exclude the audio stack. Switch it back to `1` if a consumer explicitly needs the legacy audio APIs.
+> Python wheels honour the same toggle. Set `YUP_ENABLE_AUDIO_MODULES=0` in your environment before
+> running `python -m build python` (or `pip wheel`) to publish artifacts that exclude the audio stack.
+> Switch it back to `1` if a consumer explicitly needs the legacy audio APIs.
 
-## Keeping the Codebase Focused
-The repository still contains legacy helpers from its YUP origins. Before the upcoming pruning pass, use the checklist below to
- keep the pipeline reliable:
+## 1. Focus the Build
+The renderer still depends on targeted helpers from `yup_core`, `yup_events`, and `yup_graphics`.
+Before deleting or renaming those modules, confirm that `modules/yup_gui/artboard` remains buildable
+and that the pybind11 bindings compile. Use the following CMake invocation to configure Visual Studio
+projects that prioritise the renderer, bindings, and tests:
 
-1. **Renderer dependencies:**
-   - `modules/yup_gui/artboard/` depends on math/geometry utilities from `modules/yup_graphics/`. Confirm those helpers have dir
-     ect replacements before deleting them.
-   - The Direct3D 11 backend expects COM initialisation and DXGI error translation helpers defined in `modules/yup_core/`. Mark
-     any alternative implementations with comments that highlight parity requirements.
-2. **Python bridge:**
-   - `python/src/yup_rive_renderer.cpp` is the single source of truth for method names consumed by `python/yup_ndi/orchestrator.
-     py`. If you collapse or rename functions, adjust both sides in the same commit.
-   - Pytest fixtures under `python/tests/` encode the minimal renderer surface we expect. Keep them green to validate that prune
-     d C++ symbols remain accessible.
-3. **Tooling and docs:**
-   - Scripts in `tools/` and `justfile` currently reference broader YUP build options. Annotate each script with the minimum fla
-     gs still required for the Rive → NDI flow so redundant tasks can be removed later.
-   - Whenever you stub out legacy behaviour, capture the rationale here (or in inline comments) so the follow-up refactor knows
-     the change is intentional.
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
+  -DYUP_ENABLE_AUDIO_MODULES=OFF \
+  -DYUP_BUILD_TESTS=ON \
+  -DYUP_BUILD_EXAMPLES=OFF
+cmake --build build --config Release
+```
 
-## Draft Roadmap for the Refactor
-- Inventory remaining references to audio/plugin systems and replace them with explicit no-ops.
-- Flatten include directories so the renderer and Python bindings only surface the public headers they use.
-- Delete unused JUCE integration once the Direct3D path is fully standalone.
-- Tighten packaging metadata (`pyproject.toml`, `setup.cfg`, `justfile`) to avoid shipping optional components by default.
+## 2. Build & Install the Python Packages
+Run the `just` recipe to build the wheel, reinstall it into the current environment, and execute the
+Python unit tests:
 
-Additional sections covering renderer setup, Python bindings, and NDI orchestration will be added soon. The outline above ensures
-that by the time those sections land, no redundant subsystems remain to distract from the end-to-end workflow.
+```powershell
+just python_wheel
+```
+
+Alternatively, run the underlying commands manually from the `python/` directory:
+
+```powershell
+python -m build --wheel
+python -m pip install --force-reinstall dist/yup-*.whl
+pytest -q
+```
+
+## 3. Drive the Renderer from Python
+The `yup_rive_renderer` module mirrors every method exposed by
+`modules/yup_gui/artboard/yup_RiveOffscreenRenderer.*`. A minimal usage example:
+
+```python
+from yup_rive_renderer import RiveOffscreenRenderer
+
+renderer = RiveOffscreenRenderer(width=1920, height=1080)
+if not renderer.is_valid():
+    raise RuntimeError(renderer.get_last_error())
+
+renderer.load_file("assets/demo.riv", artboard="Main")
+print(renderer.list_animations())  # discover scenes
+renderer.play_animation("Intro", loop=False)
+progressed = renderer.advance(1 / 60)
+frame = renderer.acquire_frame_view()  # zero-copy BGRA memoryview
+```
+
+`acquire_frame_view()` returns a read-only `memoryview` that can be cast to a flat byte buffer or into
+`(height, width, 4)` NumPy arrays. `get_frame_bytes()` remains available when a defensive copy is
+needed.
+
+## 4. Publish Frames Over NDI
+The `yup_ndi` package orchestrates renderers and senders. It accepts factories for dependency
+injection during testing, but defaults to constructing `RiveOffscreenRenderer` instances and
+`cyndilib` senders. Example:
+
+```python
+from fractions import Fraction
+from yup_ndi import NDIOrchestrator, NDIStreamConfig
+
+with NDIOrchestrator() as orchestrator:
+    orchestrator.add_stream(
+        NDIStreamConfig(
+            name="StudioA",
+            width=1920,
+            height=1080,
+            riv_path="assets/demo.riv",
+            animation="Loop",
+            loop_animation=True,
+            frame_rate=Fraction(60000, 1001),
+            ndi_groups="ControlRoom",
+            metadata={"ndi": {"comment": "Rive playback"}},
+        )
+    )
+
+    for _ in range(600):
+        orchestrator.advance_all(1 / 60)
+```
+
+Use `apply_stream_control()` to pause/resume playback, select artboards, or set state-machine inputs
+at runtime. Register custom control handlers via `register_control_handler()` if you expose REST/OSC
+interfaces above the orchestrator.
+
+## 5. Keep Tests Green
+The smoke tests in `python/tests/` validate both the binding surface and the orchestrator:
+
+```powershell
+just python_smoke
+```
+
+The suites provide fake renderers and senders so they run without native GPU or NDI dependencies.
+When modifying the renderer API, update the bindings and tests in the same commit to avoid drift.
+
+## 6. Troubleshooting
+- **`ImportError: yup_rive_renderer`:** Ensure `python -m build --wheel` succeeded and that the wheel
+  was installed into the active Python environment.
+- **`ImportError: cyndilib`:** Install `cyndilib>=0.0.8` when streaming to real NDI receivers. The
+  orchestrator tests work without it because they inject fake senders.
+- **Black frames or zero-sized memory views:** Confirm `advance()` is called with a positive delta and
+  that the renderer reported a valid artboard/animation. Use `get_last_error()` for detailed GPU
+  diagnostics.
