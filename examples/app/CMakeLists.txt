@@ -19,6 +19,10 @@
 
 cmake_minimum_required (VERSION 3.28)
 
+if (NOT YUP_ENABLE_AUDIO_MODULES)
+    return()
+endif()
+
 # ==== Set target name and version
 set (target_name example_app)
 set (target_version "1.0.0")

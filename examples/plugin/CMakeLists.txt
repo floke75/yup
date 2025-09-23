@@ -19,6 +19,10 @@
 
 cmake_minimum_required(VERSION 3.28)
 
+if (NOT YUP_ENABLE_AUDIO_MODULES)
+    return()
+endif()
+
 # ==== Prepare target
 set (target_name example_plugin)
 set (target_version "1.0.0")
