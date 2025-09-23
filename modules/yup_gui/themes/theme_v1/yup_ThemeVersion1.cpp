@@ -19,7 +19,7 @@
   ==============================================================================
 */
 
-#if YUP_MODULE_AVAILABLE_yup_audio_gui
+#if YUP_ENABLE_AUDIO_MODULES && YUP_MODULE_AVAILABLE_yup_audio_gui
 #include <yup_audio_gui/yup_audio_gui.h>
 #endif
 
@@ -768,7 +768,7 @@ void paintPopupMenu (Graphics& g, const ApplicationTheme& theme, const PopupMenu
 }
 
 //==============================================================================
-#if YUP_MODULE_AVAILABLE_yup_audio_gui
+#if YUP_ENABLE_AUDIO_MODULES && YUP_MODULE_AVAILABLE_yup_audio_gui
 void paintMidiKeyboard (Graphics& g, const ApplicationTheme& theme, const MidiKeyboardComponent& keyboard)
 {
     auto bounds = keyboard.getLocalBounds();
@@ -983,7 +983,7 @@ ApplicationTheme::Ptr createThemeVersion1()
 
     theme->setComponentStyle<PopupMenu> (ComponentStyle::createStyle<PopupMenu> (paintPopupMenu));
 
-#if YUP_MODULE_AVAILABLE_yup_audio_gui
+#if YUP_ENABLE_AUDIO_MODULES && YUP_MODULE_AVAILABLE_yup_audio_gui
     theme->setComponentStyle<MidiKeyboardComponent> (ComponentStyle::createStyle<MidiKeyboardComponent> (paintMidiKeyboard));
     theme->setColor (MidiKeyboardComponent::Style::whiteKeyColorId, Color (0xfff0f0f0));
     theme->setColor (MidiKeyboardComponent::Style::whiteKeyPressedColorId, Color (0xff4ebfff));

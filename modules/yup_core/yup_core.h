@@ -175,6 +175,15 @@
 #define YUP_ALLOW_STATIC_NULL_VARIABLES 0
 #endif
 
+/** Config: YUP_ENABLE_AUDIO_MODULES
+    Controls whether audio-related modules are compiled and registered at build time.
+    This flag is normally provided by the build system and defaults to enabled when
+    audio modules are available.
+*/
+#ifndef YUP_ENABLE_AUDIO_MODULES
+#define YUP_ENABLE_AUDIO_MODULES 1
+#endif
+
 /** Config: YUP_STRICT_REFCOUNTEDPOINTER
     If enabled, this will make the ReferenceCountedObjectPtr class stricter about allowing
     itself to be cast directly to a raw pointer. By default this is disabled, for compatibility
