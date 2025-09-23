@@ -29,7 +29,6 @@
 #include <array>
 #include <cstring>
 #include <functional>
-#include <optional>
 #include <mutex>
 
 #if YUP_WINDOWS && YUP_RIVE_USE_D3D
@@ -627,8 +626,6 @@ private:
     {
         return activeArtboardName;
     }
-
-    Microsoft::WRL::ComPtr<ID3D11Device> device;
 };
 
 } // namespace yup
