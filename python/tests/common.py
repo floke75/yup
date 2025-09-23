@@ -4,8 +4,7 @@ import glob
 from pathlib import Path
 
 try:
-	import yup
-
+    import yup  # type: ignore  # noqa: F401
 except ImportError:
     folder = (Path(__file__).parent.parent / "build")
     for ext in ["*.so", "*.pyd"]:
@@ -15,4 +14,7 @@ except ImportError:
                 sys.path.append(str(Path(f).parent))
                 break
 
-    import yup
+    try:
+        import yup  # type: ignore  # noqa: F401
+    except ImportError:
+        yup = None

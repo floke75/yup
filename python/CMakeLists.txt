@@ -121,3 +121,47 @@ endif()
 
 target_sources (${target_name} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../modules/yup_core/system/yup_StandardHeader.h")
+
+set (rive_renderer_target yup_rive_renderer)
+
+add_library (${rive_renderer_target} MODULE
+    "${CMAKE_CURRENT_LIST_DIR}/src/yup_rive_renderer.cpp")
+
+target_compile_features (${rive_renderer_target} PRIVATE cxx_std_17)
+
+target_compile_definitions (${rive_renderer_target}
+    PRIVATE
+        PYBIND11_DETAILED_ERROR_MESSAGES=1)
+
+target_link_libraries (${rive_renderer_target}
+    PRIVATE
+        yup::yup_core
+        yup::yup_events
+        yup::yup_graphics
+        yup::yup_gui
+        yup::yup_python)
+
+if (TARGET Python::Python)
+    target_link_libraries (${rive_renderer_target} PRIVATE Python::Python)
+endif()
+
+target_include_directories (${rive_renderer_target}
+    PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/.."
+        "${Python_INCLUDE_DIRS}")
+
+if (NOT "${Python_LIBRARY_DIRS}" STREQUAL "")
+    target_link_directories (${rive_renderer_target} PRIVATE "${Python_LIBRARY_DIRS}")
+endif()
+
+set_target_properties (${rive_renderer_target} PROPERTIES
+    OUTPUT_NAME "yup_rive_renderer"
+    CXX_EXTENSIONS OFF
+    VISIBILITY_INLINES_HIDDEN TRUE
+    POSITION_INDEPENDENT_CODE TRUE)
+
+if (WIN32)
+    set_target_properties (${rive_renderer_target} PROPERTIES SUFFIX ".pyd")
+else()
+    set_target_properties (${rive_renderer_target} PROPERTIES PREFIX "")
+endif()

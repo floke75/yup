@@ -4,17 +4,19 @@ This guide documents the Windows-focused workflow for turning Rive animations in
 It highlights the current code locations, the components that are still landing, and how they are expected to fit together.
 
 ## Goals For The Windows Pipeline
-- **Headless Direct3D 11 Rendering:** Extend `yup::RiveOffscreenRenderer` so it can initialise a swapchain-free D3D11 device, render artboards into BGRA textures, and provide deterministic CPU readback of each frame.
-- **Python-Friendly Surface:** Shape a pybind11 layer (planned in `python/`) that exposes animation loading/control and frame retrieval APIs tailored for automation agents.
-- **NDI Transmission:** Wrap the renderer output with a lightweight Python control layer that forwards BGRA frames to NDI via the forthcoming wrapper module.
-- **Minimal Footprint:** Focus builds on the renderer/NDI stack by disabling unrelated audio and plugin systems, keeping iteration times tight on Windows.
+- **Headless Direct3D 11 Rendering:** `yup::RiveOffscreenRenderer` initialises a swapchain-free D3D11 device, renders artboards into BGRA textures, and provides deterministic CPU readback of each frame.
+- **Python-Friendly Surface:** The `yup_rive_renderer` pybind11 module exposes animation loading/control and frame retrieval APIs tailored for automation agents.
+- **NDI Transmission:** The `yup_ndi` orchestration layer subscribes to renderer frames, maps timestamps, and forwards BGRA buffers to `cyndilib.Sender` instances.
+- **Minimal Footprint:** Builds stay focused on the renderer/NDI stack by disabling unrelated audio and plugin systems, keeping iteration times tight on Windows.
 
 ## Key Source Locations
-| Component | Purpose | Current / Planned Location |
+| Component | Purpose | Location |
 | --- | --- | --- |
 | Offscreen renderer core | Implements Direct3D 11 setup, Rive artboard rendering, and frame readback. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp` |
-| Python binding layer | Provides `pybind11` bindings for loading `.riv` files, advancing animations, and fetching BGRA frames. | `python/` (new module: _TBD name_) |
-| NDI sender wrapper | Bridges Python frames into NDI streams, coordinating lifecycle and multi-stream publishing. | `python/` (new wrapper package planned) |
+| Renderer unit tests | Validates stride, dimensions, pause semantics, and shared-buffer behaviour. | `tests/yup_gui/yup_RiveOffscreenRenderer.cpp` |
+| Python binding layer | Provides `pybind11` bindings for loading `.riv` files, advancing animations, and fetching BGRA frames. | `python/src/yup_rive_renderer.cpp`, `python/CMakeLists.txt` |
+| NDI sender wrapper | Bridges Python frames into NDI streams, coordinating lifecycle and multi-stream publishing. | `python/yup_ndi/orchestrator.py`, `python/yup_ndi/__init__.py` |
+| Python smoke tests | Exercises binding import/zero-copy views and mocked NDI sends. | `python/tests/test_yup_rive_renderer/`, `python/tests/test_yup_ndi/` |
 
 ## How The Pieces Fit Together
 1. **Render Frames:** `yup::RiveOffscreenRenderer` manages the Direct3D 11 device, renders the requested artboard/animation into an offscreen texture, and exposes CPU-readable BGRA data.
@@ -54,16 +56,30 @@ python -m build python
 Use `1` to re-enable the audio modules if a downstream integration actually needs them.
 
 ## Streamlined Commands
-A `just rive_ndi_win` recipe (landing soon in the project `justfile`) will encapsulate the configuration and build steps above, plus invoke targeted tests for the renderer/binding/NDI stack. Once available, run:
+Use the following helpers while iterating on Windows:
 
-```bash
-just rive_ndi_win
+```powershell
+cmake -S . -B build/rive-ndi-win `
+  -G "Visual Studio 17 2022" `
+  -DYUP_ENABLE_AUDIO_MODULES=OFF `
+  -DYUP_ENABLE_PLUGIN_MODULES=OFF `
+  -DYUP_ENABLE_EXAMPLES=OFF
+
+cmake --build build/rive-ndi-win --target yup_gui --config RelWithDebInfo
+
+cmake -S python -B build/rive-ndi-win-python `
+  -G "Visual Studio 17 2022" `
+  -DYUP_ENABLE_AUDIO_MODULES=OFF
+
+cmake --build build/rive-ndi-win-python --target yup_rive_renderer --config RelWithDebInfo
+cmake --build build/rive-ndi-win-python --target yup --config RelWithDebInfo
+
+just python_test_rive_ndi
 ```
 
-Until the recipe is merged, execute the `cmake` configuration manually and build the `yup_gui` targets inside Visual Studio.
+The `just python_test_rive_ndi` recipe executes the focused Python suites so you can validate binding imports, zero-copy frame acquisition, and mocked NDI sends without running the full legacy test matrix.
 
 ## Next Steps For Contributors
-- Finish wiring Direct3D 11 BGRA readback within `RiveOffscreenRenderer`.
-- Implement the pybind11 module that surfaces renderer controls to Python.
-- Integrate the NDI sender wrapper and add smoke tests that validate frame emission.
-- Update documentation as the Python module and `just` recipe go live so downstream agents inherit the latest workflow.
+- Profile end-to-end frame throughput on Windows hardware and tune staging-buffer reuse if needed.
+- Expand documentation with troubleshooting notes for common MSVC/NDI configuration hiccups.
+- Layer integration tests that combine the pybind11 renderer with live NDI sends on target machines.

@@ -97,3 +97,8 @@ python_uninstall:
 [working-directory: 'python']
 python_test *TEST_OPTS:
   python -m pytest -s {{TEST_OPTS}}
+
+[working-directory: 'python']
+[doc("run renderer and NDI focused python smoke tests")]
+python_test_rive_ndi:
+  python -m pytest -q tests/test_yup_rive_renderer tests/test_yup_ndi
