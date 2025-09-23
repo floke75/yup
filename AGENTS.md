@@ -3,68 +3,51 @@
 ## Mission Overview
 You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`.riv`) animations offscreen via Direct3D 11 and exposes frames (with alpha) to Python for NDI transmission. The end result is a reusable C++ core (built with CMake/Visual Studio), a pybind11-powered Python module, and a lightweight Python control layer that can drive NDI streams and optional REST/OSC endpoints. Audio/plugin subsystems in YUP remain untouched and disabled at runtime.
 
-**Supported platform:** Windows 11 with MSVC 2022 and the Windows 10/11 SDK. Other platforms can compile stubs, but only Windows requires full functionality.
+**Supported platform:** Windows 11 with MSVC 2022 and the Windows 10/11 SDK. Other platforms may compile stub implementations, but only Windows requires full functionality.
 
-## Current Implementation Snapshot (April 2025)
+## Implementation Snapshot (April 2025)
 | Area | Status | Key Files |
 | --- | --- | --- |
-| Offscreen renderer shell | ✅ `yup::RiveOffscreenRenderer` exposes construction, `.riv` loading, artboard/animation/state-machine enumeration, active-artboard selection, pause control, frame accessors, and error reporting. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp`
-| Renderer tests | ✅ GoogleTest suite covers frame stride/dimensions, shared-buffer semantics, pause toggling, and artboard selection logic. | `tests/yup_gui/yup_RiveOffscreenRenderer.cpp`
-| Direct3D 11 backend | ⚠️ Still incomplete—stubbed paths remain; GPU device creation, BGRA target setup, and staging-texture readback need to be finalised. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.cpp`
-| Animation/state-machine ticking | ⚠️ Needs deterministic advancement logic tied to the renderer loop and exposed inputs. | `modules/yup_gui/artboard/` (renderer implementation), potential helpers under `modules/yup_gui/component/`
-| Python bindings | ⏳ Not started. Plan to add under `python/src/` with build glue in `python/CMakeLists.txt` and `python/pyproject.toml`.
-| Python NDI layer | ⏳ Not started. Target package directory `python/yup_ndi/` with tests in `python/tests/` and optional tooling in `tools/`.
-| Documentation | ⏳ Needs expansion in `docs/` to describe Windows workflow, renderer usage, Python module, and NDI orchestration.
+| Direct3D 11 offscreen renderer | ✅ `yup::RiveOffscreenRenderer` initialises the D3D11 device/context, renders into a BGRA texture, and performs CPU readback into a shared buffer. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp` |
+| Scene & animation control | ✅ Artboard enumeration, animation/state-machine playback, pause toggling, and state-machine input helpers are exposed through the renderer API. | `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.cpp` |
+| Renderer tests | ✅ GoogleTest coverage validates frame stride/dimensions, pause semantics, shared-buffer behaviour, and artboard switching. | `tests/yup_gui/yup_RiveOffscreenRenderer.cpp` |
+| Python renderer binding | ✅ `yup_rive_renderer` pybind11 module wraps renderer construction, artboard/animation APIs, and exposes zero-copy frame views. | `python/src/yup_rive_renderer.cpp`, build glue in `python/CMakeLists.txt`, packaging metadata in `python/pyproject.toml` |
+| Python NDI orchestration | ✅ `yup_ndi` package manages multi-stream orchestration, timestamp mapping, metadata dispatch, and optional control hooks using mocked `cyndilib` senders for tests. | `python/yup_ndi/__init__.py`, `python/yup_ndi/orchestrator.py`, tests under `python/tests/test_yup_ndi/` |
+| Python test harness | ✅ `pytest` suites cover binding behaviour, orchestrator frame flow, and provide fake renderer/sender utilities that avoid native DLL requirements. | `python/tests/` |
+| Documentation & developer workflow | ⚠️ Needs expansion in `docs/` and `tools/` to describe Windows build steps, wheel packaging, and orchestration usage. |
 
-## Near-Term Task Roadmap
-1. **Stabilise the Direct3D11 offscreen renderer**  
-   * Finalise device/context creation, BGRA render target management, and CPU readback in `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.cpp`.  
-   * Keep lifecycle deterministic and feed errors through the existing `getLastError()` surface.  
-   * Extend/adjust `tests/yup_gui/yup_RiveOffscreenRenderer.cpp` as needed.
+## Key Components & File Map
+- **Renderer core:** `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp`
+  - D3D11 setup, staging texture readback, artboard/animation/state-machine management, pause controls, and frame-buffer accessors.
+  - Non-Windows fallback stub maintains API compatibility but reports unsupported status.
+- **Supporting tests:** `tests/yup_gui/yup_RiveOffscreenRenderer.cpp`
+  - Exercises pause toggling, buffer sharing, stride validation, and artboard selection across stubbed renderers.
+- **Python binding:** `python/src/yup_rive_renderer.cpp`
+  - Binds renderer lifecycle, exposes artboard lists, playback controls, state-machine inputs, and `memoryview`-friendly BGRA buffers.
+  - Build definitions live in `python/CMakeLists.txt`; packaging metadata in `python/pyproject.toml` targets MSVC 2022 + C++17 with Ninja.
+- **Python orchestration:** `python/yup_ndi/orchestrator.py`
+  - Implements `RiveStreamOrchestrator`, stream configuration dataclasses, metadata callbacks, REST/OSC hook placeholders, and stream lifecycle management.
+  - Package entry point re-exports live in `python/yup_ndi/__init__.py`.
+- **Python tests & utilities:**
+  - `python/tests/test_yup_ndi/test_orchestrator.py` supplies orchestrator coverage with fake renderer/sender fixtures.
+  - `python/tests/common.py`, `python/tests/utilities.py`, and `python/tests/conftest.py` provide shared helpers and dependency guards when the native extension is unavailable.
+- **Packaging scaffold:** `python/setup.py`, `python/MANIFEST.in`, and `python/tools/` for Windows wheel generation (needs auditing as work continues).
 
-2. **Wire animation and state-machine control**  
-   * Ensure `.riv` loading hooks populate animation/state-machine lists and drive advancement via `advance()` using existing YUP timing utilities (`modules/yup_core/`, `modules/yup_events/`).
-
-3. **Build the pybind11 extension**  
-   * Author bindings in `python/src/` (e.g., `python/src/yup_rive_renderer.cpp`), update `python/CMakeLists.txt`, and align packaging metadata in `python/pyproject.toml`.
-
-4. **Create the Python NDI orchestration layer**  
-   * Implement `python/yup_ndi/` modules that wrap the binding, integrate `cyndilib.Sender`, and provide configuration hooks.  
-   * Add mocks/tests in `python/tests/` to exercise the flow without requiring an actual NDI runtime.
-
-5. **Integrate tooling and documentation**  
-   * Update `justfile`, `tools/` scripts, and `docs/` so Windows contributors can build the renderer, generate wheels, and run smoke tests end to end.
-
-## Repository Map (Key Paths)
-| Path | Purpose |
-| --- | --- |
-| `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h/.cpp` | Core renderer implementation (current focus). |
-| `modules/yup_gui/component/` | Higher-level GUI helpers—mine for reuse before adding new infrastructure. |
-| `modules/yup_graphics/` | GPU helpers/textures; reuse for D3D11 plumbing. |
-| `modules/yup_core/`, `modules/yup_events/` | Logging, timing, threading utilities useful for renderer orchestration. |
-| `tests/yup_gui/yup_RiveOffscreenRenderer.cpp` | Current GoogleTest coverage; extend alongside renderer changes. |
-| `python/CMakeLists.txt`, `python/pyproject.toml` | Build configuration for upcoming pybind11 module. |
-| `python/src/` | Future home for binding sources. |
-| `python/yup_ndi/` | Planned Python package for NDI orchestration. |
-| `python/tests/` | Place Python unit/integration tests for bindings and NDI layer. |
-| `docs/` | Update with Windows pipeline instructions once features land. |
-| `tools/` & `justfile` | Developer tooling entry points; extend only when needed for renderer/binding/NDI workflows. |
-
-### Out-of-Scope / Avoid Touching Unless Necessary
-- `modules/yup_audio/*`, `modules/yup_plugin/*`, `examples/audio/*`, `examples/plugins/*`: Audio and plugin stacks stay untouched.
-- `thirdparty/`: Treat as vendor code—no edits.
-- Non-Windows build systems: keep existing support but do not broaden scope.
+## Current Priorities
+1. **Documentation & developer tooling**
+   - Expand `docs/` with Windows 11 build instructions for the renderer, Python binding, and NDI orchestrator usage.
+   - Update `justfile` or add scripts in `tools/` describing end-to-end workflows (configure VS environment, build wheel, run tests).
+2. **Integration testing**
+   - Plan combined smoke tests that exercise the pybind11 module feeding the orchestrator (mocks acceptable for automation; document manual NDI validation).
+3. **Performance validation**
+   - Profile frame throughput and ensure zero-copy semantics across the renderer → Python boundary when running on Windows hardware.
 
 ## Workflow Expectations
-- Start each feature by surveying existing helpers to avoid duplication (e.g., reuse resource-management utilities under `modules/yup_graphics/`). Document discoveries in commit messages or comments.
-- Maintain modular boundaries: renderer core in C++, bindings in `python/src/`, orchestration in `python/yup_ndi/`.
-- Provide meaningful Doxygen for new public APIs (C++ & Python). Keep Allman brace style and follow include-order guidance from `CLAUDE.md`.
-- Use RAII and existing `Result`/`ResultValue` types for error handling. Expose rich errors through `getLastError()` and propagate to Python bindings.
-- Add deterministic tests for every new surface (C++ GoogleTests or Python `pytest`). When NDI can’t be exercised automatically, supply mocks and document manual steps.
-- Keep changes focused; avoid formatting churn or incidental refactors outside scoped directories.
+- **Analyse before coding:** survey existing helpers (e.g., `modules/yup_graphics/`, `modules/yup_core/`) before introducing new abstractions; reuse utilities whenever possible.
+- **Code style:** adhere to Allman braces, JUCE-style naming, and include-order conventions outlined in `CLAUDE.md`. Add Doxygen for new public APIs.
+- **Error handling:** use RAII for graphics resources, propagate detailed errors through `RiveOffscreenRenderer::getLastError()` and mirror them in Python exceptions.
+- **Testing:** accompany new functionality with deterministic GoogleTests or `pytest` cases. Provide mocks when native dependencies (NDI, GPU) are unavailable in CI.
+- **Windows focus:** keep build flags, documentation, and scripts aligned with Windows 11 + MSVC 2022; non-Windows paths should remain stubs without extra investment.
+- **Change scope:** keep commits targeted—avoid formatting-only edits and unrelated subsystem changes.
 
-## Communication Notes
-- In PR descriptions and status updates, tie progress to the roadmap checkpoints above. Call out any Visual Studio or packaging prerequisites you modify.
-- Windows 11/MSVC 2022 remains the primary target—ensure instructions, scripts, and defaults respect that constraint.
-
-Stay focused on delivering the Windows-ready Rive renderer pipeline while keeping the repository tidy and well documented.
+Stay focused on delivering a polished Windows pipeline from Rive rendering through Python-based NDI streaming while maintaining clear documentation for future contributors.
