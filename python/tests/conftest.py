@@ -4,7 +4,10 @@ import pytest
 from . import common
 from .utilities import get_runtime_data_folder, remove_directory_recursively
 
-import yup
+try:
+    import yup  # type: ignore  # noqa: F401
+except ImportError:
+    yup = None
 
 #==================================================================================================
 
@@ -20,6 +23,9 @@ def pytest_unconfigure(config):
     if sys.gettrace() is not None:
         return
 
+    if yup is None:
+        return
+
     remove_directory_recursively(get_runtime_data_folder().getFullPathName(), [".gitignore"])
 
 #==================================================================================================
@@ -29,6 +35,9 @@ def yield_test():
 
 @pytest.fixture
 def juce_app():
+    if yup is None:
+        pytest.skip("yup native module is not available")
+
     class Application(yup.YUPApplication):
         def __init__(self):
             super().__init__()
