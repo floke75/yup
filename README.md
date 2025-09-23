@@ -153,7 +153,7 @@ Available recipes:
     c                                       # alias for `clean`
     default                                 # list available recipes
     emscripten CONFIG="Debug"               # generate build and serve project for WASM
-    emscripten_serve CONFIG="Debug"         # serve project for WASM
+    emscripten_serve                        # serve project for WASM
     ios PLATFORM="OS64"                     # generate and open project for iOS using Xcode
     ios_simulator PLATFORM="SIMULATORARM64" # generate and open project for iOS Simulator macOS using Xcode
     linux PROFILING="OFF"                   # generate project in Linux using Ninja
@@ -168,7 +168,7 @@ To bootstrap the Windows-focused Rive + NDI pipeline (with audio modules disable
 just rive_ndi_win
 ```
 
-By default this configures a Visual Studio 2022 solution under `build/rive_ndi` and immediately builds the `yup` target. Once the build completes you can open the generated solution or iterate with additional `cmake --build build/rive_ndi --target yup --config Release` invocations as needed.
+By default this configures a Visual Studio 2022 solution under `build/rive_ndi` and immediately builds the `yup` target. Once the build completes you can open the generated solution or iterate with additional `cmake --build build/rive_ndi --target yup --config Release` invocations as needed. See [docs/rive_ndi_overview.md](docs/rive_ndi_overview.md) for a workflow breakdown and follow-up tasks.
 
 ## Preparing the build directory
 Create a Dedicated Build Directory:
