@@ -130,12 +130,20 @@ struct RiveOffscreenRenderer::Impl
     Result loadInternal (const std::function<ArtboardFile::LoadResult (rive::Factory&)>& loader,
                          const String& artboardName)
     {
+        lastError.clear();
+
+        const auto failWith = [this] (String message)
+        {
+            lastError = std::move (message);
+            return Result::fail (lastError);
+        };
+
         if (! initialised)
-            return Result::fail ("Rive offscreen renderer is not available");
+            return failWith ("Rive offscreen renderer is not available");
 
         auto factory = renderContext->factory();
         if (factory == nullptr)
-            return Result::fail ("Missing Rive factory");
+            return failWith ("Missing Rive factory");
 
         auto loadResult = loader (*factory);
         if (! loadResult)
@@ -148,7 +156,7 @@ struct RiveOffscreenRenderer::Impl
 
         auto* riveFile = artboardFile->getRiveFile();
         if (riveFile == nullptr)
-            return Result::fail ("Loaded Rive file is invalid");
+            return failWith ("Loaded Rive file is invalid");
 
         std::unique_ptr<rive::ArtboardInstance> loadedArtboard;
 
@@ -158,7 +166,7 @@ struct RiveOffscreenRenderer::Impl
             loadedArtboard = riveFile->artboardDefault();
 
         if (loadedArtboard == nullptr)
-            return Result::fail ("Unable to create artboard instance");
+            return failWith ("Unable to create artboard instance");
 
         artboard = std::move (loadedArtboard);
         updateViewTransform();
@@ -166,7 +174,9 @@ struct RiveOffscreenRenderer::Impl
         resetScenes();
 
         if (! scene)
-            return Result::fail ("Artboard does not contain a playable scene");
+            return failWith ("Artboard does not contain a playable scene");
+
+        paused = false;
 
         {
             std::scoped_lock lock (frameMutex);
@@ -229,6 +239,8 @@ struct RiveOffscreenRenderer::Impl
         animation->loopValue (loop ? static_cast<int> (rive::Loop::loop) : static_cast<int> (rive::Loop::oneShot));
         scene = animation.get();
         scene->advanceAndApply (0.0f);
+        paused = false;
+        renderFrame();
         return true;
     }
 
@@ -247,6 +259,8 @@ struct RiveOffscreenRenderer::Impl
 
         scene = stateMachine.get();
         scene->advanceAndApply (0.0f);
+        paused = false;
+        renderFrame();
         return true;
     }
 
@@ -256,6 +270,7 @@ struct RiveOffscreenRenderer::Impl
         stateMachine.reset();
         sceneHolder.reset();
         scene = nullptr;
+        paused = false;
     }
 
     bool setBoolInput (const String& name, bool value)
@@ -329,6 +344,8 @@ private:
     void initialise()
     {
         using Microsoft::WRL::ComPtr;
+
+        lastError.clear();
 
         UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if YUP_DEBUG
@@ -560,13 +577,13 @@ struct RiveOffscreenRenderer::Impl
     StringArray listStateMachines() const { return {}; }
     bool playAnimation (const String&, bool) { return false; }
     bool playStateMachine (const String&) { return false; }
-    void stop() {}
+    void stop() { paused = false; }
     bool setBoolInput (const String&, bool) { return false; }
     bool setNumberInput (const String&, double) { return false; }
     bool fireTrigger (const String&) { return false; }
     bool advance (float) { return false; }
-    void setPaused (bool) {}
-    bool isPaused() const noexcept { return false; }
+    void setPaused (bool shouldPause) { paused = shouldPause; }
+    bool isPaused() const noexcept { return paused; }
     int getWidth() const noexcept { return width; }
     int getHeight() const noexcept { return height; }
     std::size_t getStride() const noexcept { return static_cast<std::size_t> (width) * 4u; }
@@ -578,6 +595,7 @@ struct RiveOffscreenRenderer::Impl
     int height = 0;
     std::shared_ptr<std::vector<uint8>> frameBuffer;
     String lastError;
+    bool paused = false;
 };
 
 } // namespace yup
