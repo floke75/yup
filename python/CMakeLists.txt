@@ -42,6 +42,22 @@ yup_add_default_modules ("${CMAKE_CURRENT_LIST_DIR}/.."
         YUP_PYTHON_SCRIPT_CATCH_EXCEPTION=0
         PYBIND11_DETAILED_ERROR_MESSAGES=1)
 
+set (wheel_modules
+    yup::yup_core
+    yup::yup_data_model
+    yup::yup_events
+    yup::yup_graphics
+    yup::yup_gui
+    yup::yup_python)
+
+if (YUP_ENABLE_AUDIO_MODULES)
+    set (wheel_modules
+        yup::yup_audio_basics
+        yup::yup_audio_devices
+        yup::yup_audio_processors
+        ${wheel_modules})
+endif()
+
 yup_standalone_app (
     TARGET_NAME ${target_name}
     TARGET_VERSION ${target_version}
@@ -49,16 +65,7 @@ yup_standalone_app (
     TARGET_APP_ID "org.yup.${target_name}"
     TARGET_APP_NAMESPACE "org.yup"
     TARGET_WHEEL ON
-    MODULES
-        yup::yup_audio_basics
-        yup::yup_audio_devices
-        yup::yup_audio_processors
-        yup::yup_core
-        yup::yup_data_model
-        yup::yup_events
-        yup::yup_graphics
-        yup::yup_gui
-        yup::yup_python)
+    MODULES ${wheel_modules})
 
 set_target_properties (${target_name} PROPERTIES
     CXX_EXTENSIONS OFF

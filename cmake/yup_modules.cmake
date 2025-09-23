@@ -633,32 +633,36 @@ macro (yup_add_default_modules modules_path)
     yup_add_module (${modules_path}/modules/yup_data_model "${modules_definitions}" ${modules_group})
     add_library (yup::yup_data_model ALIAS yup_data_model)
 
-    yup_add_module (${modules_path}/modules/yup_dsp "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_dsp ALIAS yup_dsp)
-
     yup_add_module (${modules_path}/modules/yup_graphics "${modules_definitions}" ${modules_group})
     add_library (yup::yup_graphics ALIAS yup_graphics)
 
     yup_add_module (${modules_path}/modules/yup_gui "${modules_definitions}" ${modules_group})
     add_library (yup::yup_gui ALIAS yup_gui)
 
-    yup_add_module (${modules_path}/modules/yup_audio_basics "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_basics ALIAS yup_audio_basics)
+    if (YUP_ENABLE_AUDIO_MODULES)
+        yup_add_module (${modules_path}/modules/yup_dsp "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_dsp ALIAS yup_dsp)
 
-    yup_add_module (${modules_path}/modules/yup_audio_devices "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_devices ALIAS yup_audio_devices)
+        yup_add_module (${modules_path}/modules/yup_audio_basics "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_audio_basics ALIAS yup_audio_basics)
 
-    yup_add_module (${modules_path}/modules/yup_audio_formats "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_formats ALIAS yup_audio_formats)
+        yup_add_module (${modules_path}/modules/yup_audio_devices "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_audio_devices ALIAS yup_audio_devices)
 
-    yup_add_module (${modules_path}/modules/yup_audio_processors "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_processors ALIAS yup_audio_processors)
+        yup_add_module (${modules_path}/modules/yup_audio_formats "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_audio_formats ALIAS yup_audio_formats)
 
-    yup_add_module (${modules_path}/modules/yup_audio_gui "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_gui ALIAS yup_audio_gui)
+        yup_add_module (${modules_path}/modules/yup_audio_processors "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_audio_processors ALIAS yup_audio_processors)
 
-    yup_add_module (${modules_path}/modules/yup_audio_plugin_client "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_audio_plugin_client ALIAS yup_audio_plugin_client)
+        yup_add_module (${modules_path}/modules/yup_audio_gui "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_audio_gui ALIAS yup_audio_gui)
+
+        yup_add_module (${modules_path}/modules/yup_audio_plugin_client "${modules_definitions}" ${modules_group})
+        add_library (yup::yup_audio_plugin_client ALIAS yup_audio_plugin_client)
+    else()
+        _yup_message (STATUS "Skipping audio modules (YUP_ENABLE_AUDIO_MODULES=OFF)")
+    endif()
 
     if (YUP_ARG_ENABLE_PYTHON)
         if (NOT YUP_BUILD_WHEEL)
