@@ -67,6 +67,10 @@ The recipe invokes `python -m build --wheel`, reinstalls the freshly built wheel
 Python unit tests. To skip installation and testing, run `python -m build --wheel` from the `python`
 directory instead.
 
+> **Note:** The legacy `yup` core/events/graphics bindings still require the compiled native module.
+> The corresponding test suites now skip automatically when the extension is unavailable so that
+> documentation-only environments can execute the remaining Python checks.
+
 ### Run Renderer ↔ NDI Smoke Tests
 Targeted smoke tests verify zero-copy frame access and orchestrator behaviour:
 ```powershell
@@ -99,6 +103,10 @@ with NDIOrchestrator() as orchestrator:
 ```
 Use `apply_stream_control` to adjust playback at runtime (pause, resume, change animations, or tweak
 state-machine inputs).
+
+> `NDIStreamConfig.frame_rate` mirrors the CLI semantics: provide a positive float/Fraction (or a
+> `(numerator, denominator)` tuple) to lock the stream to a deterministic cadence. Supply `0` or `None`
+> to follow real time. Invalid tuples raise explicit errors so configuration mistakes are caught early.
 
 ## Development Guidelines
 - Follow Allman brace style and the conventions outlined in `CLAUDE.md`.

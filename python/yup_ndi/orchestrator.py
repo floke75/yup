@@ -33,6 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from fractions import Fraction
 import logging
+import math
 import time
 from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Protocol
 
@@ -118,14 +119,43 @@ class NDIStreamConfig:
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Renderer dimensions must be positive")
 
+        frame_rate_value: Optional[Fraction]
+
         if isinstance(self.frame_rate, Fraction):
-            pass
+            frame_rate_value = self.frame_rate
         elif isinstance(self.frame_rate, tuple):
-            self.frame_rate = Fraction(self.frame_rate[0], self.frame_rate[1])
+            try:
+                numerator, denominator = self.frame_rate
+            except (TypeError, ValueError) as exc:
+                raise TypeError("frame_rate tuple must contain exactly two values") from exc
+
+            try:
+                frame_rate_value = Fraction(int(numerator), int(denominator))
+            except (ZeroDivisionError, TypeError, ValueError) as exc:
+                raise ValueError("frame_rate tuple must contain integers and a non-zero denominator") from exc
         elif isinstance(self.frame_rate, (float, int)):
-            self.frame_rate = Fraction(self.frame_rate).limit_denominator()
-        elif self.frame_rate is not None:
+            fps_value = float(self.frame_rate)
+            if not math.isfinite(fps_value):
+                raise ValueError("frame_rate must be finite")
+            if fps_value == 0:
+                frame_rate_value = None
+            elif fps_value < 0:
+                raise ValueError("frame_rate must be positive")
+            else:
+                frame_rate_value = Fraction(fps_value).limit_denominator()
+        elif self.frame_rate is None:
+            frame_rate_value = None
+        else:
             raise TypeError("frame_rate must be a Fraction, float, tuple, or None")
+
+        if frame_rate_value is not None and frame_rate_value <= 0:
+            raise ValueError("frame_rate must be positive")
+
+        # Persist the normalised Fraction so downstream code does not have to
+        # repeat coercion logic.  The frame pump relies on rational arithmetic
+        # to maintain deterministic 100 ns timestamps when the caller supplies
+        # broadcast-style cadences (e.g. 60000/1001).
+        self.frame_rate = frame_rate_value
 
         if self.inactive_connection_poll_interval < 0:
             raise ValueError("inactive_connection_poll_interval must be non-negative")
