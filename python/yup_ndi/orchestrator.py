@@ -118,11 +118,13 @@ class NDIStreamConfig:
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Renderer dimensions must be positive")
 
-        if isinstance(self.frame_rate, tuple):
+        if isinstance(self.frame_rate, Fraction):
+            pass
+        elif isinstance(self.frame_rate, tuple):
             self.frame_rate = Fraction(self.frame_rate[0], self.frame_rate[1])
-        elif isinstance(self.frame_rate, float):
+        elif isinstance(self.frame_rate, (float, int)):
             self.frame_rate = Fraction(self.frame_rate).limit_denominator()
-        elif self.frame_rate is not None and not isinstance(self.frame_rate, Fraction):
+        elif self.frame_rate is not None:
             raise TypeError("frame_rate must be a Fraction, float, tuple, or None")
 
         if self.inactive_connection_poll_interval < 0:
