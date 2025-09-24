@@ -32,7 +32,10 @@ frames as bytes or `memoryview` objects without copying when possible. Callers c
 `staging_buffer_count` to control how many readback textures the renderer cycles through before data is
 reused.
 3. **Publish over NDI:** `yup_ndi.NDIOrchestrator` instantiates renderers, maps timestamps into the
-100 ns NDI domain, forwards frames to `cyndilib` senders, and applies metadata/control commands.
+100 ns NDI domain, forwards frames to `cyndilib` senders, and applies metadata/control commands. Use
+`set_stream_start_time()` (or the optional `start_time` argument on `add_stream()`) to prime the
+deterministic timestamp anchor when driving fractional frame rates so frames align to a consistent
+monotonic origin. The CLI frame pump wires this up automatically before emitting the first frame.
 
 The orchestrator also exposes a `renderer_options` dictionary so deployments can request deeper staging
 queues when buffering bursts or multiple consumers is preferable to the lowest possible latency.

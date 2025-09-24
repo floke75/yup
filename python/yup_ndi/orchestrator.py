@@ -177,6 +177,7 @@ class _NDIStream:
         sender_handle: SenderHandle,
         timestamp_mapper: TimestampMapper,
         time_provider: TimeProvider,
+        start_time: Optional[float] = None,
     ) -> None:
         self.config = config
         self.renderer = renderer
@@ -194,14 +195,34 @@ class _NDIStream:
             last_activity_time=self._time_provider(),
             paused_for_inactivity=False,
         )
+        self._frame_period_100ns: Optional[Fraction] = None
+        self._frame_index = 0
+        self._anchor_100ns: Optional[Fraction] = None
+        self._pending_anchor_time = start_time
 
-    def advance_and_send (self, delta_seconds: float, timestamp: Optional[float]) -> bool:
+        if self.config.frame_rate is not None:
+            if self.config.frame_rate <= 0:
+                raise ValueError("frame_rate must be positive when provided")
+            self._frame_period_100ns = Fraction(10_000_000, 1) / self.config.frame_rate
+        else:
+            self._frame_period_100ns = None
+
+    def set_start_time (self, start_time: Optional[float]) -> None:
+        """Prime the deterministic timeline anchor for the next frame send."""
+
+        self._reset_frame_timeline(start_time)
+
+    def advance_and_send (
+        self,
+        delta_seconds: float,
+        timestamp: Optional[float],
+        start_timestamp: Optional[float] = None,
+    ) -> bool:
         # NOTE: This method is the critical frame pump. Any future refactor that
         # introduces batching or async uploads must either keep this call path or
         # update the Python tests/NDI adapters in lockstep. Expect downstream
         # tooling (REST/OSC shims, CLI demos) to import this logic directly.
         now = timestamp if timestamp is not None else self._time_provider()
-        ndi_timestamp = self._timestamp_mapper(now)
 
         connection_count = self._poll_connection_count(now)
         should_send = self._should_send_frames(connection_count)
@@ -216,6 +237,7 @@ class _NDIStream:
             self._last_progress_state = progressed
 
         if should_send:
+            ndi_timestamp = self._select_timestamp(now, start_timestamp)
             buffer = self._acquire_frame_buffer()
             self.sender_handle.send(
                 buffer,
@@ -233,6 +255,33 @@ class _NDIStream:
         self._metrics.last_activity_time = now
 
         return progressed
+
+    def _select_timestamp (self, frame_time: float, start_timestamp: Optional[float]) -> int:
+        if self._frame_period_100ns is None:
+            return self._timestamp_mapper(frame_time)
+
+        anchor = self._ensure_anchor(frame_time, start_timestamp)
+        timestamp_fraction = anchor + self._frame_index * self._frame_period_100ns
+        ndi_timestamp = int(timestamp_fraction)
+        self._frame_index += 1
+        return ndi_timestamp
+
+    def _ensure_anchor (self, frame_time: float, start_timestamp: Optional[float]) -> Fraction:
+        anchor = self._anchor_100ns
+        if anchor is not None:
+            return anchor
+
+        candidate = self._pending_anchor_time
+        if candidate is None:
+            candidate = start_timestamp
+        if candidate is None:
+            candidate = frame_time
+
+        anchor = Fraction(int(candidate * 10_000_000), 1)
+        self._anchor_100ns = anchor
+        self._pending_anchor_time = None
+        self._frame_index = 0
+        return anchor
 
     def _acquire_frame_buffer (self) -> memoryview:
         view_getter = getattr(self.renderer, "acquire_frame_view", None)
@@ -263,6 +312,7 @@ class _NDIStream:
         action = action.lower()
         if action == "pause":
             self.renderer.set_paused(True)
+            self._reset_frame_timeline()
             return True
         if action == "resume":
             self.renderer.set_paused(False)
@@ -272,14 +322,21 @@ class _NDIStream:
             if not name:
                 raise ValueError("play_animation requires a 'name' parameter")
             loop = bool(parameters.get("loop", True))
-            return self.renderer.play_animation(name, loop)
+            result = self.renderer.play_animation(name, loop)
+            if result:
+                self._reset_frame_timeline()
+            return result
         if action == "play_state_machine":
             name = parameters.get("name")
             if not name:
                 raise ValueError("play_state_machine requires a 'name' parameter")
-            return self.renderer.play_state_machine(name)
+            result = self.renderer.play_state_machine(name)
+            if result:
+                self._reset_frame_timeline()
+            return result
         if action == "stop":
             self.renderer.stop()
+            self._reset_frame_timeline()
             return True
         if action == "select_artboard":
             name = parameters.get("name")
@@ -351,6 +408,15 @@ class _NDIStream:
                 _logger.debug("Failed to toggle renderer pause state", exc_info=True)
 
         self._metrics.paused_for_inactivity = should_pause
+        if should_pause:
+            self._reset_frame_timeline()
+
+    def _reset_frame_timeline (self, start_time: Optional[float] = None) -> None:
+        if self._frame_period_100ns is None:
+            return
+        self._frame_index = 0
+        self._anchor_100ns = None
+        self._pending_anchor_time = start_time
 
 
 def _default_timestamp_mapper (seconds: float) -> int:
@@ -509,7 +575,7 @@ class NDIOrchestrator:
     def __exit__ (self, exc_type, exc, tb) -> None:
         self.close()
 
-    def add_stream (self, config: NDIStreamConfig) -> None:
+    def add_stream (self, config: NDIStreamConfig, *, start_time: Optional[float] = None) -> None:
         if config.name in self._streams:
             raise ValueError(f"A stream named '{config.name}' already exists")
 
@@ -517,7 +583,14 @@ class NDIOrchestrator:
         self._initialise_renderer(renderer, config)
 
         sender_handle = self._sender_factory(config, renderer)
-        stream = _NDIStream(config, renderer, sender_handle, self._timestamp_mapper, self._time_provider)
+        stream = _NDIStream(
+            config,
+            renderer,
+            sender_handle,
+            self._timestamp_mapper,
+            self._time_provider,
+            start_time=start_time,
+        )
         self._streams[config.name] = stream
 
         sender_handle.apply_metadata(config.metadata)
@@ -529,14 +602,25 @@ class NDIOrchestrator:
     def list_streams (self) -> List[str]:
         return list(self._streams.keys())
 
-    def advance_stream (self, name: str, delta_seconds: float, timestamp: Optional[float] = None) -> bool:
+    def advance_stream (
+        self,
+        name: str,
+        delta_seconds: float,
+        timestamp: Optional[float] = None,
+        start_timestamp: Optional[float] = None,
+    ) -> bool:
         stream = self._streams[name]
-        return stream.advance_and_send(delta_seconds, timestamp)
+        return stream.advance_and_send(delta_seconds, timestamp, start_timestamp)
 
-    def advance_all (self, delta_seconds: float, timestamp: Optional[float] = None) -> Dict[str, bool]:
+    def advance_all (
+        self,
+        delta_seconds: float,
+        timestamp: Optional[float] = None,
+        start_timestamp: Optional[float] = None,
+    ) -> Dict[str, bool]:
         results: Dict[str, bool] = {}
         for name, stream in list(self._streams.items()):
-            results[name] = stream.advance_and_send(delta_seconds, timestamp)
+            results[name] = stream.advance_and_send(delta_seconds, timestamp, start_timestamp)
         return results
 
     def get_stream_metrics (self, name: str) -> NDIStreamMetrics:
@@ -565,6 +649,12 @@ class NDIOrchestrator:
     def apply_stream_metadata (self, name: str, metadata: Mapping[str, Mapping[str, Any]]) -> None:
         stream = self._streams[name]
         stream.sender_handle.apply_metadata(metadata)
+
+    def set_stream_start_time (self, name: str, start_time: Optional[float]) -> None:
+        """Reset the deterministic timeline anchor used for NDI timestamps."""
+
+        stream = self._streams[name]
+        stream.set_start_time(start_time)
 
     def close (self) -> None:
         for name in list(self._streams.keys()):

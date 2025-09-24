@@ -102,6 +102,12 @@ Use `apply_stream_control()` to pause/resume playback, select artboards, or set 
 at runtime. Register custom control handlers via `register_control_handler()` if you expose REST/OSC
 interfaces above the orchestrator.
 
+> [!IMPORTANT]
+> When you configure a `frame_rate`, use `NDIOrchestrator.set_stream_start_time()` (or pass the
+> optional `start_time` keyword to `add_stream()`) to anchor the deterministic 100 ns timeline before
+> sending the first frame. This prevents drift when pumping fractional rates such as 30000/1001. The
+> CLI's frame pump captures a monotonic start time and primes the stream automatically.
+
 `renderer_options` accepts a `staging_buffer_count` entry that forwards to the renderer constructor,
 mirroring the direct Python API. Set it to a higher value when streams are consumed asynchronously or
 when a few extra milliseconds of buffering keeps throughput stable. Invalid or missing entries fall
