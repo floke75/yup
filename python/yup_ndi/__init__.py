@@ -21,10 +21,11 @@ Runtime expectations:
 * The :mod:`yup_rive_renderer` extension must be built from this repository with
   `YUP_ENABLE_AUDIO_MODULES=OFF` as documented in ``docs/rive_ndi_overview.md``.
 
-The top-level API re-exports :class:`~yup_ndi.orchestrator.NDIOrchestrator` and
-:class:`~yup_ndi.orchestrator.NDIStreamConfig` for convenience.
+The top-level API re-exports :class:`~yup_ndi.orchestrator.NDIOrchestrator`,
+:class:`~yup_ndi.orchestrator.NDIStreamConfig`, and
+:class:`~yup_ndi.orchestrator.NDIStreamMetrics` for convenience.
 """
 
-from .orchestrator import NDIOrchestrator, NDIStreamConfig
+from .orchestrator import NDIOrchestrator, NDIStreamConfig, NDIStreamMetrics
 
-__all__ = ["NDIOrchestrator", "NDIStreamConfig"]
+__all__ = ["NDIOrchestrator", "NDIStreamConfig", "NDIStreamMetrics"]

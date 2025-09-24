@@ -1,3 +1,24 @@
+"""
+  ==============================================================================
+
+   This file is part of the YUP library.
+   Copyright (c) 2025 - kunitoki@gmail.com
+
+   YUP is an open source library subject to open-source licensing.
+
+   The code included in this file is provided under the terms of the ISC license
+   http://www.isc.org/downloads/software-support-policy/isc-license. Permission
+   to use, copy, modify, and/or distribute this software for any purpose with or
+   without fee is hereby granted provided that the above copyright notice and
+   this permission notice appear in all copies.
+
+   YUP IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+   DISCLAIMED.
+
+  ==============================================================================
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -106,6 +127,7 @@ class FakeSenderHandle:
         self.calls: list[FakeSenderCall] = []
         self.metadata: list[Mapping[str, Mapping[str, Any]]] = []
         self.closed = False
+        self.connection_count = 1
 
     def send (self, buffer: memoryview, width: int, height: int, stride: int, timestamp: int) -> None:
         self.calls.append(FakeSenderCall(width, height, stride, timestamp, bytes(buffer)))
@@ -116,6 +138,9 @@ class FakeSenderHandle:
 
     def close (self) -> None:
         self.closed = True
+
+    def get_connection_count (self) -> int:
+        return self.connection_count
 
 
 class FakeFactories:
@@ -172,6 +197,11 @@ def test_orchestrator_advances_and_sends_frames () -> None:
     assert frame_call.timestamp == int(1.25 * 1_000)
     assert sender.metadata == [config.metadata]
 
+    metrics = orchestrator.get_stream_metrics("main")
+    assert metrics.frames_sent == 1
+    assert metrics.frames_suppressed == 0
+    assert metrics.last_connection_count == 1
+
 
 def test_remove_stream_closes_sender () -> None:
     factories = FakeFactories()
@@ -189,6 +219,87 @@ def test_remove_stream_closes_sender () -> None:
     orchestrator.remove_stream("solo")
     assert factories.senders["solo"].closed is True
     assert factories.renderers["solo"].stopped is True
+
+
+def test_throttle_skips_send_when_no_connections () -> None:
+    factories = FakeFactories()
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        timestamp_mapper=lambda seconds: int(seconds * 1_000),
+        time_provider=lambda: 0.0,
+    )
+
+    config = NDIStreamConfig(
+        name="idle",
+        width=2,
+        height=2,
+        riv_bytes=b"riv",
+        inactive_connection_poll_interval=0.0,
+    )
+
+    orchestrator.add_stream(config)
+    factories.senders["idle"].connection_count = 0
+
+    progressed = orchestrator.advance_stream("idle", 0.25)
+    assert progressed is True
+
+    sender = factories.senders["idle"]
+    assert sender.calls == []
+
+    renderer = factories.renderers["idle"]
+    assert renderer.advanced == [0.25]
+
+    metrics = orchestrator.get_stream_metrics("idle")
+    assert metrics.frames_sent == 0
+    assert metrics.frames_suppressed == 1
+    assert metrics.last_connection_count == 0
+    assert metrics.paused_for_inactivity is False
+
+
+def test_pause_when_inactive_prevents_advancement () -> None:
+    factories = FakeFactories()
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        timestamp_mapper=lambda seconds: int(seconds * 1_000),
+        time_provider=lambda: 0.0,
+    )
+
+    config = NDIStreamConfig(
+        name="sleepy",
+        width=2,
+        height=2,
+        riv_bytes=b"riv",
+        pause_when_inactive=True,
+        inactive_connection_poll_interval=0.0,
+    )
+
+    orchestrator.add_stream(config)
+    sender = factories.senders["sleepy"]
+    renderer = factories.renderers["sleepy"]
+
+    sender.connection_count = 0
+    orchestrator.advance_stream("sleepy", 0.5)
+
+    assert renderer.advanced == []
+    assert renderer.paused is True
+
+    metrics = orchestrator.get_stream_metrics("sleepy")
+    assert metrics.frames_sent == 0
+    assert metrics.frames_suppressed == 1
+    assert metrics.paused_for_inactivity is True
+
+    sender.connection_count = 1
+    orchestrator.advance_stream("sleepy", 0.5)
+
+    assert renderer.advanced == [0.5]
+    assert renderer.paused is False
+
+    metrics = orchestrator.get_stream_metrics("sleepy")
+    assert metrics.frames_sent == 1
+    assert metrics.frames_suppressed == 1
+    assert metrics.paused_for_inactivity is False
 
 
 def test_apply_stream_control_handles_common_actions () -> None:
@@ -229,6 +340,23 @@ def test_apply_stream_control_handles_common_actions () -> None:
 
     with pytest.raises(ValueError):
         orchestrator.apply_stream_control("control", "unknown")
+
+
+def test_apply_stream_metadata_delegates_to_sender () -> None:
+    factories = FakeFactories()
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        timestamp_mapper=lambda seconds: 0,
+        time_provider=lambda: 0.0,
+    )
+
+    config = NDIStreamConfig(name="meta", width=2, height=2, riv_bytes=b"riv")
+    orchestrator.add_stream(config)
+
+    orchestrator.apply_stream_metadata("meta", {"ndi": {"note": "update"}})
+    sender = factories.senders["meta"]
+    assert sender.metadata[-1] == {"ndi": {"note": "update"}}
 
 
 def test_initial_state_machine_inputs_are_applied () -> None:
