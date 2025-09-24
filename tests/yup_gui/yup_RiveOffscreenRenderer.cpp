@@ -96,3 +96,44 @@ TEST (RiveOffscreenRendererTest, ArtboardEnumerationIsStubbed)
     EXPECT_FALSE (renderer.getLastError().isEmpty());
 }
 
+TEST (RiveOffscreenRendererTest, BufferedFramesAreDeliveredInOrder)
+{
+    RiveOffscreenRenderer renderer (kWidth, kHeight, 3);
+
+    if (renderer.isValid())
+        GTEST_SKIP() << "Hardware renderer available; stubbed frame queue test not applicable";
+
+    renderer.advance (0.0f);
+    renderer.advance (0.0f);
+    renderer.advance (0.0f);
+
+    std::vector<uint8> first (renderer.getFrameBuffer());
+    std::vector<uint8> second (renderer.getFrameBuffer());
+    std::vector<uint8> third (renderer.getFrameBuffer());
+
+    ASSERT_FALSE (first.empty());
+    ASSERT_FALSE (second.empty());
+    ASSERT_FALSE (third.empty());
+
+    EXPECT_EQ (static_cast<uint8> (first[0] + 1u), second[0]);
+    EXPECT_EQ (static_cast<uint8> (second[0] + 1u), third[0]);
+}
+
+TEST (RiveOffscreenRendererTest, DefaultBufferCountPreservesLatestFrame)
+{
+    RiveOffscreenRenderer renderer (kWidth, kHeight);
+
+    if (renderer.isValid())
+        GTEST_SKIP() << "Hardware renderer available; stubbed frame queue test not applicable";
+
+    renderer.advance (0.0f);
+    renderer.advance (0.0f);
+
+    std::vector<uint8> latest (renderer.getFrameBuffer());
+    ASSERT_FALSE (latest.empty());
+    EXPECT_EQ (static_cast<uint8> (1u), latest[0]);
+
+    std::vector<uint8> repeated (renderer.getFrameBuffer());
+    EXPECT_EQ (latest, repeated);
+}
+

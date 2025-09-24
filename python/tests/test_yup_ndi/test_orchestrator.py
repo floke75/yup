@@ -566,10 +566,11 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     sender_handles: list[Any] = []
 
     class StubRenderer:
-        def __init__ (self, width: int, height: int) -> None:
+        def __init__ (self, width: int, height: int, staging_buffer_count: int = 1) -> None:
             self.width = width
             self.height = height
             self.row_stride = width * 4
+            self.staging_buffer_count = staging_buffer_count
             self.loaded: Optional[bytes] = None
             self.artboard: Optional[str] = None
             self.played_animation: Optional[tuple[str, bool]] = None
@@ -704,6 +705,7 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     assert renderer.played_animation == ("spin", False)
     assert renderer.played_state_machine is None
     assert renderer.paused is False
+    assert renderer.staging_buffer_count == 1
 
     assert sender_handles, "Sender factory should have been invoked"
     sender = sender_handles[-1]
@@ -729,3 +731,44 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
 
     assert renderer.stopped is True
     assert sender.closed is True
+
+
+def test_default_renderer_factory_respects_staging_buffer_count (monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, tuple[int, int, int]] = {}
+
+    class StubRenderer:
+        def __init__ (self, width: int, height: int, staging_buffer_count: int = 1) -> None:
+            captured["args"] = (width, height, staging_buffer_count)
+
+        def is_valid (self) -> bool:
+            return True
+
+    monkeypatch.setattr(orchestrator_module, "RiveOffscreenRenderer", StubRenderer)
+
+    config = NDIStreamConfig(
+        name="buffered",
+        width=2,
+        height=2,
+        riv_bytes=b"riv",
+        renderer_options={"staging_buffer_count": 4},
+    )
+
+    renderer = orchestrator_module._default_renderer_factory(config)
+
+    assert isinstance(renderer, StubRenderer)
+    assert captured["args"] == (2, 2, 4)
+
+
+def test_default_renderer_factory_validates_staging_buffer_count (monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(orchestrator_module, "RiveOffscreenRenderer", object)
+
+    config = NDIStreamConfig(
+        name="invalid",
+        width=2,
+        height=2,
+        riv_bytes=b"riv",
+        renderer_options={"staging_buffer_count": 0},
+    )
+
+    with pytest.raises(ValueError):
+        orchestrator_module._default_renderer_factory(config)

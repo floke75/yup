@@ -26,10 +26,15 @@
 #include "artboard/yup_ArtboardFile.h"
 #include "yup_core/streams/yup_MemoryInputStream.h"
 
+#include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <mutex>
+#include <utility>
+#include <vector>
 
 #if YUP_WINDOWS && YUP_RIVE_USE_D3D
 
@@ -106,11 +111,24 @@ struct RiveOffscreenRenderer::Impl
         they exercise the same behaviour. Delete helper methods only when the
         tests prove the orchestrator still receives deterministic frames.
     */
-    explicit Impl (int widthIn, int heightIn)
+    enum class FrameState
+    {
+        Available,
+        Writing,
+        PendingRead,
+        Reading
+    };
+
+    explicit Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn)
         : width (widthIn),
           height (heightIn),
-          rowStride (static_cast<std::size_t> (widthIn) * 4),
-          frameBufferWrite (static_cast<std::size_t> (widthIn) * static_cast<std::size_t> (heightIn) * 4u, 0)
+          rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
+          frameSize (rowStride * static_cast<std::size_t> (std::max (heightIn, 0))),
+          stagingBufferCount (std::max<std::size_t> (std::size_t { 1 }, stagingBufferCountIn)),
+          stagingTextures (stagingBufferCount),
+          stagingBuffers (stagingBufferCount, std::vector<uint8> (frameSize, 0)),
+          frameStates (stagingBufferCount, FrameState::Available),
+          frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0))
     {
         initialise();
     }
@@ -442,11 +460,23 @@ private:
         }
 
         desc = makeTextureDescription (static_cast<UINT> (width), static_cast<UINT> (height), D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ);
-        hr = device->CreateTexture2D (&desc, nullptr, stagingTexture.GetAddressOf());
-        if (FAILED (hr))
+
+        for (auto& texture : stagingTextures)
         {
-            lastError = String (makeErrorMessage (hr));
-            return;
+            hr = device->CreateTexture2D (&desc, nullptr, texture.GetAddressOf());
+            if (FAILED (hr))
+            {
+                lastError = String (makeErrorMessage (hr));
+                return;
+            }
+        }
+
+        {
+            std::scoped_lock lock (frameMutex);
+            readyFrames.clear();
+            std::fill (frameStates.begin(), frameStates.end(), FrameState::Available);
+            frameSnapshotDirty = false;
+            nextWriteIndex = 0;
         }
 
         renderer = std::make_unique<rive::RiveRenderer> (renderContext.get());
@@ -491,10 +521,51 @@ private:
         viewTransform = rive::computeAlignment (rive::Fit::contain, rive::Alignment::center, targetBounds, artboardBounds);
     }
 
+    std::size_t findAvailableIndex()
+    {
+        for (std::size_t offset = 0; offset < stagingBufferCount; ++offset)
+        {
+            const auto index = (nextWriteIndex + offset) % stagingBufferCount;
+            if (frameStates[index] == FrameState::Available)
+                return index;
+        }
+
+        return stagingBufferCount;
+    }
+
+    std::size_t acquireWriteIndex()
+    {
+        std::unique_lock lock (frameMutex);
+
+        while (true)
+        {
+            const auto available = findAvailableIndex();
+            if (available < stagingBufferCount)
+            {
+                frameStates[available] = FrameState::Writing;
+                nextWriteIndex = (available + 1) % stagingBufferCount;
+                return available;
+            }
+
+            if (! readyFrames.empty())
+            {
+                const auto dropped = readyFrames.front();
+                readyFrames.pop_front();
+                frameStates[dropped] = FrameState::Available;
+                frameSnapshotDirty = ! readyFrames.empty();
+                continue;
+            }
+
+            frameCondition.wait (lock);
+        }
+    }
+
     void renderFrame()
     {
         if (! initialised || scene == nullptr)
             return;
+
+        const auto writeIndex = acquireWriteIndex();
 
         rive::gpu::RenderContext::FrameDescriptor frameDescriptor = makeFrameDescriptor (width, height);
         renderContext->beginFrame (frameDescriptor);
@@ -512,47 +583,62 @@ private:
 
         renderTarget->setTargetTexture (nullptr);
 
-        deviceContext->CopyResource (stagingTexture.Get(), renderTexture.Get());
+        auto* stagingTexture = stagingTextures[writeIndex].Get();
+        deviceContext->CopyResource (stagingTexture, renderTexture.Get());
 
         D3D11_MAPPED_SUBRESOURCE mapped {};
-        auto hr = deviceContext->Map (stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+        auto hr = deviceContext->Map (stagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
         if (FAILED (hr))
         {
             lastError = String (makeErrorMessage (hr));
+
+            std::unique_lock lock (frameMutex);
+            frameStates[writeIndex] = FrameState::Available;
+            frameCondition.notify_one();
             return;
         }
 
         auto* srcBytes = static_cast<const uint8*> (mapped.pData);
+        auto& destination = stagingBuffers[writeIndex];
+
+        for (int row = 0; row < height; ++row)
+        {
+            const auto srcRow = srcBytes + static_cast<std::size_t> (row) * mapped.RowPitch;
+            auto* dstRow = destination.data() + static_cast<std::size_t> (row) * rowStride;
+            std::memcpy (dstRow, srcRow, rowStride);
+        }
+
+        deviceContext->Unmap (stagingTexture, 0);
 
         {
-            std::scoped_lock lock (frameMutex);
-
-            for (int row = 0; row < height; ++row)
-            {
-                const auto srcRow = srcBytes + static_cast<std::size_t> (row) * mapped.RowPitch;
-                auto* dstRow = frameBufferWrite.data() + static_cast<std::size_t> (row) * rowStride;
-                std::memcpy (dstRow, srcRow, rowStride);
-            }
-
+            std::unique_lock lock (frameMutex);
+            frameStates[writeIndex] = FrameState::PendingRead;
+            readyFrames.push_back (writeIndex);
             frameSnapshotDirty = true;
         }
 
-        deviceContext->Unmap (stagingTexture.Get(), 0);
+        frameCondition.notify_one();
     }
 
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> deviceContext;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> renderTexture;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTexture;
+    std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> stagingTextures;
 
     std::unique_ptr<rive::gpu::RenderContext> renderContext;
     rive::rcp<rive::gpu::RenderTargetD3D> renderTarget;
     std::unique_ptr<rive::RiveRenderer> renderer;
 
-    std::vector<uint8> frameBufferWrite;
+    std::vector<std::vector<uint8>> stagingBuffers;
+    std::vector<FrameState> frameStates;
+    std::deque<std::size_t> readyFrames;
+    std::size_t frameSize = 0;
+    std::size_t stagingBufferCount = 1;
+    std::size_t nextWriteIndex = 0;
     mutable std::shared_ptr<std::vector<uint8>> frameSnapshot;
-    mutable bool frameSnapshotDirty = true;
+    mutable bool frameSnapshotDirty = false;
     mutable std::mutex frameMutex;
+    mutable std::condition_variable frameCondition;
 
     std::shared_ptr<ArtboardFile> artboardFile;
     std::unique_ptr<rive::ArtboardInstance> artboard;
@@ -575,23 +661,51 @@ private:
 
     std::shared_ptr<std::vector<uint8>> ensureFrameSnapshot() const
     {
-        std::scoped_lock lock (frameMutex);
+        std::size_t frameIndex = stagingBufferCount;
+        std::shared_ptr<std::vector<uint8>> snapshot;
 
-        if (frameSnapshotDirty || frameSnapshot == nullptr)
         {
-            if (frameSnapshot != nullptr && frameSnapshot.use_count() == 1 && frameSnapshot->size() == frameBufferWrite.size())
+            std::unique_lock lock (frameMutex);
+
+            if (! frameSnapshotDirty && frameSnapshot != nullptr)
+                return frameSnapshot;
+
+            if (readyFrames.empty())
             {
-                *frameSnapshot = frameBufferWrite;
-            }
-            else
-            {
-                frameSnapshot = std::make_shared<std::vector<uint8>> (frameBufferWrite);
+                frameSnapshotDirty = false;
+
+                if (frameSnapshot == nullptr)
+                    frameSnapshot = std::make_shared<std::vector<uint8>> (frameSize, 0);
+
+                return frameSnapshot;
             }
 
-            frameSnapshotDirty = false;
+            frameIndex = readyFrames.front();
+            readyFrames.pop_front();
+            frameStates[frameIndex] = FrameState::Reading;
+            snapshot = frameSnapshot;
         }
 
-        return frameSnapshot;
+        const auto& source = stagingBuffers[frameIndex];
+
+        if (snapshot != nullptr && snapshot.use_count() == 1 && snapshot->size() == source.size())
+        {
+            std::copy (source.begin(), source.end(), snapshot->begin());
+        }
+        else
+        {
+            snapshot = std::make_shared<std::vector<uint8>> (source);
+        }
+
+        {
+            std::unique_lock lock (frameMutex);
+            frameSnapshot = snapshot;
+            frameSnapshotDirty = ! readyFrames.empty();
+            frameStates[frameIndex] = FrameState::Available;
+        }
+
+        frameCondition.notify_one();
+        return snapshot;
     }
 
     Result setActiveArtboard (std::unique_ptr<rive::ArtboardInstance> newArtboard)
@@ -612,6 +726,9 @@ private:
 
         {
             std::scoped_lock lock (frameMutex);
+            readyFrames.clear();
+            std::fill (frameStates.begin(), frameStates.end(), FrameState::Available);
+            nextWriteIndex = 0;
             frameSnapshot.reset();
             frameSnapshotDirty = true;
         }
@@ -637,10 +754,14 @@ namespace yup
 
 struct RiveOffscreenRenderer::Impl
 {
-    Impl (int widthIn, int heightIn)
-        : width (widthIn), height (heightIn)
+    Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn)
+        : width (widthIn),
+          height (heightIn),
+          rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
+          frameSize (rowStride * static_cast<std::size_t> (std::max (heightIn, 0))),
+          stagingBufferCount (std::max<std::size_t> (std::size_t { 1 }, stagingBufferCountIn)),
+          frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0))
     {
-        frameBuffer = std::make_shared<std::vector<uint8>> (static_cast<std::size_t> (width) * static_cast<std::size_t> (height) * 4u, 0);
     }
 
     bool isValid() const noexcept { return false; }
@@ -666,14 +787,39 @@ struct RiveOffscreenRenderer::Impl
     bool setBoolInput (const String&, bool) { return false; }
     bool setNumberInput (const String&, double) { return false; }
     bool fireTrigger (const String&) { return false; }
-    bool advance (float) { return false; }
+
+    bool advance (float)
+    {
+        if (frameSize == 0)
+            return true;
+
+        std::vector<uint8> frame (frameSize, static_cast<uint8> (frameCounter & 0xFFu));
+        ++frameCounter;
+
+        {
+            std::lock_guard lock (frameMutex);
+            readyFrames.push_back (std::move (frame));
+            while (readyFrames.size() > stagingBufferCount)
+                readyFrames.pop_front();
+            frameSnapshotDirty = true;
+        }
+
+        return true;
+    }
+
     void setPaused (bool shouldPause) { paused = shouldPause; }
     bool isPaused() const noexcept { return paused; }
     int getWidth() const noexcept { return width; }
     int getHeight() const noexcept { return height; }
-    std::size_t getStride() const noexcept { return static_cast<std::size_t> (width) * 4u; }
-    const std::vector<uint8>& getFrameBuffer() const noexcept { return *frameBuffer; }
-    std::shared_ptr<const std::vector<uint8>> getFrameBufferShared() const noexcept { return frameBuffer; }
+    std::size_t getStride() const noexcept { return rowStride; }
+
+    const std::vector<uint8>& getFrameBuffer() const noexcept { return *ensureFrameSnapshot(); }
+
+    std::shared_ptr<const std::vector<uint8>> getFrameBufferShared() const noexcept
+    {
+        return ensureFrameSnapshot();
+    }
+
     const String& getLastError() const noexcept { return lastError; }
     Result selectArtboard (const String& name)
     {
@@ -683,9 +829,43 @@ struct RiveOffscreenRenderer::Impl
     }
     String getActiveArtboardName() const { return {}; }
 
+    std::shared_ptr<std::vector<uint8>> ensureFrameSnapshot() const
+    {
+        std::lock_guard lock (frameMutex);
+
+        if (frameSnapshotDirty && ! readyFrames.empty())
+        {
+            auto frame = std::move (readyFrames.front());
+            readyFrames.pop_front();
+
+            if (frameSnapshot != nullptr && frameSnapshot.use_count() == 1 && frameSnapshot->size() == frame.size())
+            {
+                *frameSnapshot = std::move (frame);
+            }
+            else
+            {
+                frameSnapshot = std::make_shared<std::vector<uint8>> (std::move (frame));
+            }
+
+            frameSnapshotDirty = ! readyFrames.empty();
+        }
+
+        if (frameSnapshot == nullptr)
+            frameSnapshot = std::make_shared<std::vector<uint8>> (frameSize, 0);
+
+        return frameSnapshot;
+    }
+
     int width = 0;
     int height = 0;
-    std::shared_ptr<std::vector<uint8>> frameBuffer;
+    std::size_t rowStride = 0;
+    std::size_t frameSize = 0;
+    std::size_t stagingBufferCount = 1;
+    mutable std::shared_ptr<std::vector<uint8>> frameSnapshot;
+    mutable bool frameSnapshotDirty = false;
+    mutable std::mutex frameMutex;
+    mutable std::deque<std::vector<uint8>> readyFrames;
+    std::size_t frameCounter = 0;
     String lastError;
     bool paused = false;
 };
@@ -697,8 +877,8 @@ struct RiveOffscreenRenderer::Impl
 namespace yup
 {
 
-RiveOffscreenRenderer::RiveOffscreenRenderer (int width, int height)
-    : impl (std::make_unique<Impl> (width, height))
+RiveOffscreenRenderer::RiveOffscreenRenderer (int width, int height, std::size_t stagingBufferCount)
+    : impl (std::make_unique<Impl> (width, height, stagingBufferCount))
 {
 }
 

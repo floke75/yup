@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 namespace yup
 {
 
@@ -49,7 +51,7 @@ class YUP_API RiveOffscreenRenderer
 {
 public:
     /** Creates a renderer for the given output dimensions. */
-    RiveOffscreenRenderer (int width, int height);
+    RiveOffscreenRenderer (int width, int height, std::size_t stagingBufferCount = 1);
 
     /** Destructor. */
     ~RiveOffscreenRenderer();

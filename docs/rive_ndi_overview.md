@@ -6,7 +6,8 @@ those components together and highlights the build/test steps that keep them ali
 
 ## What Ships Today
 - **Headless Direct3D 11 rendering:** `yup::RiveOffscreenRenderer` initialises a swapchain-free D3D11
-device, renders Rive artboards into BGRA textures, and exposes deterministic CPU readback.
+device, renders Rive artboards into BGRA textures, and exposes deterministic CPU readback with a
+configurable staging-buffer ring to balance latency against throughput.
 - **Python binding surface:** The `yup_rive_renderer` module mirrors the renderer API, including
 zero-copy frame views that the orchestrator can forward directly to NDI senders.
 - **NDI orchestration:** The `yup_ndi` package manages multiple renderers, maintains timing metadata,
@@ -27,9 +28,14 @@ DLLs.
 1. **Render Frames:** `RiveOffscreenRenderer` manages the GPU context, loads `.riv` assets, and renders
 into an offscreen BGRA texture.
 2. **Expose to Python:** The `yup_rive_renderer` extension loads files, advances scenes, and returns
-frames as bytes or `memoryview` objects without copying when possible.
+frames as bytes or `memoryview` objects without copying when possible. Callers can set
+`staging_buffer_count` to control how many readback textures the renderer cycles through before data is
+reused.
 3. **Publish over NDI:** `yup_ndi.NDIOrchestrator` instantiates renderers, maps timestamps into the
 100 ns NDI domain, forwards frames to `cyndilib` senders, and applies metadata/control commands.
+
+The orchestrator also exposes a `renderer_options` dictionary so deployments can request deeper staging
+queues when buffering bursts or multiple consumers is preferable to the lowest possible latency.
 
 The pipeline is designed so that Python orchestrates playback while the renderer handles all GPU
 work. Any API adjustment in the renderer must be mirrored in the binding and orchestrator to keep the
