@@ -165,6 +165,31 @@ def test_stream_config_accepts_fraction_ratio () -> None:
     assert config.frame_rate is rate
 
 
+def test_stream_config_rejects_zero_denominator_tuple () -> None:
+    with pytest.raises(ValueError):
+        NDIStreamConfig(name="invalid", width=1, height=1, riv_bytes=b"riv", frame_rate=(60000, 0))
+
+
+def test_stream_config_requires_two_tuple_entries () -> None:
+    with pytest.raises(TypeError):
+        NDIStreamConfig(name="invalid", width=1, height=1, riv_bytes=b"riv", frame_rate=(60000,))
+
+
+def test_stream_config_rejects_negative_fraction () -> None:
+    with pytest.raises(ValueError):
+        NDIStreamConfig(name="invalid", width=1, height=1, riv_bytes=b"riv", frame_rate=Fraction(-1, 1))
+
+
+def test_stream_config_normalises_zero_frame_rate_to_none () -> None:
+    config = NDIStreamConfig(name="zero", width=1, height=1, riv_bytes=b"riv", frame_rate=0)
+    assert config.frame_rate is None
+
+
+def test_stream_config_rejects_non_finite_float_frame_rate () -> None:
+    with pytest.raises(ValueError):
+        NDIStreamConfig(name="nan", width=1, height=1, riv_bytes=b"riv", frame_rate=float("nan"))
+
+
 def test_orchestrator_advances_and_sends_frames () -> None:
     factories = FakeFactories()
     orchestrator = NDIOrchestrator(

@@ -102,6 +102,12 @@ Use `apply_stream_control()` to pause/resume playback, select artboards, or set 
 at runtime. Register custom control handlers via `register_control_handler()` if you expose REST/OSC
 interfaces above the orchestrator.
 
+> [!NOTE]
+> `NDIStreamConfig.frame_rate` accepts either a :class:`fractions.Fraction`, a float, or a
+> `(numerator, denominator)` tuple. The value is normalised to a positive Fraction internally; passing
+> `0` (or `None`) disables deterministic cadence and defers to wall-clock timing. Tuples must use a
+> non-zero denominator—validation errors are raised eagerly so misconfigured streams fail fast.
+
 > [!IMPORTANT]
 > When you configure a `frame_rate`, use `NDIOrchestrator.set_stream_start_time()` (or pass the
 > optional `start_time` keyword to `add_stream()`) to anchor the deterministic 100 ns timeline before
