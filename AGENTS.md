@@ -23,6 +23,29 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
 - **Testing expectations:** Use the guidance embedded in `python/tests/conftest.py` and `python/tests/common.py` to respect the mock strategy for environments without the native extension. Honour the skip markers before trimming any "legacy" fixtures that keep pytest green.
 - **Build/packaging recipes:** Use the pointers in `tools/` and the notes in `python/pyproject.toml` to keep MSVC/Ninja build flags, version pinning, and wheel metadata consistent with the Windows toolchain assumptions documented above.
 
+## Codebase Map
+Use this quick-reference map to locate the canonical implementations before introducing new functionality. Reviewing these areas first helps avoid duplicating existing work.
+
+### Core C++ Renderer & Engine
+- `modules/yup_gui/artboard/`: Rive offscreen renderer implementation (`yup_RiveOffscreenRenderer.*`), scene management helpers, texture readback, and animation control utilities.
+- `modules/yup_gui/native/`: Platform-specific glue for Windows. Non-Windows builds contain stub placeholders—extend only when broadening platform support.
+- `modules/yup_core/` and `modules/yup_graphics/`: Shared engine primitives (logging, result types, graphics context helpers) that the renderer depends on. Prefer extending these modules over creating parallel abstractions.
+
+### Python Bindings & Orchestration
+- `python/src/`: pybind11 bindings that expose renderer capabilities to Python. `yup_rive_renderer.cpp` is the authoritative binding surface.
+- `python/yup_ndi/`: High-level orchestration for NDI output, metadata handling, and stream control logic.
+- `python/tests/`: `pytest` suites covering bindings, orchestration, and mock senders. Update or extend tests alongside feature changes.
+
+### Tooling, Examples, and Docs
+- `tools/`: Build, packaging, and CI helpers (`package_wheel.py`, environment setup scripts).
+- `docs/`: Conceptual guides, including the Rive → NDI walkthrough. Add new workflow documentation here.
+- `examples/`: Minimal end-to-end usage samples. Use these as starting points when demonstrating new capabilities.
+
+### Ancillary Assets
+- `standalone/`: Sandbox applications and experiments. Reuse renderer/pipeline components instead of rebuilding them here.
+- `thirdparty/`: External dependencies (e.g., Rive SDK, pybind11). Confirm licence compatibility before introducing new vendored code.
+- `cmake/` and `CMakeLists.txt`: Build system entry points. Integrate new modules by extending the existing CMake structure rather than creating ad-hoc scripts.
+
 ## Coding Standards & Structure
 The following conventions apply to all new or modified source files within this repository:
 
