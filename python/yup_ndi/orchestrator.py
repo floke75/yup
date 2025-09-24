@@ -1,4 +1,24 @@
-"""Utilities for publishing Rive frames over NDI.
+"""
+  ==============================================================================
+
+   This file is part of the YUP library.
+   Copyright (c) 2025 - kunitoki@gmail.com
+
+   YUP is an open source library subject to open-source licensing.
+
+   The code included in this file is provided under the terms of the ISC license
+   http://www.isc.org/downloads/software-support-policy/isc-license. Permission
+   to use, copy, modify, and/or distribute this software for any purpose with or
+   without fee is hereby granted provided that the above copyright notice and
+   this permission notice appear in all copies.
+
+   YUP IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+   DISCLAIMED.
+
+  ==============================================================================
+
+Utilities for publishing Rive frames over NDI.
 
 This module will be the backbone of the refactored codebase. Keep the surface
 area small and deliberate: the orchestrator depends only on the renderer
@@ -43,6 +63,8 @@ class SenderHandle(Protocol):
 
     def close (self) -> None: ...
 
+    def get_connection_count (self) -> int: ...
+
 
 class RendererFactory(Protocol):
     """Factory protocol used to instantiate renderers for each stream."""
@@ -81,6 +103,9 @@ class NDIStreamConfig:
     metadata: MutableMapping[str, Mapping[str, Any]] = field(default_factory=dict)
     state_machine_inputs: MutableMapping[str, Any] = field(default_factory=dict)
     use_async_send: bool = True
+    throttle_when_inactive: bool = True
+    pause_when_inactive: bool = False
+    inactive_connection_poll_interval: float = 1.0
 
     def __post_init__ (self) -> None:
         if not self.riv_path and self.riv_bytes is None:
@@ -99,6 +124,21 @@ class NDIStreamConfig:
             self.frame_rate = Fraction(self.frame_rate).limit_denominator()
         elif self.frame_rate is not None and not isinstance(self.frame_rate, Fraction):
             raise TypeError("frame_rate must be a Fraction, float, tuple, or None")
+
+        if self.inactive_connection_poll_interval < 0:
+            raise ValueError("inactive_connection_poll_interval must be non-negative")
+
+
+@dataclass(slots=True)
+class NDIStreamMetrics:
+    """Runtime statistics describing stream output behaviour."""
+
+    frames_sent: int
+    frames_suppressed: int
+    last_connection_count: int
+    last_send_timestamp: Optional[int]
+    last_activity_time: float
+    paused_for_inactivity: bool
 
 
 def _set_state_machine_input(renderer: Any, name: str, value: Any) -> bool:
@@ -141,6 +181,17 @@ class _NDIStream:
         self.sender_handle = sender_handle
         self._timestamp_mapper = timestamp_mapper
         self._time_provider = time_provider
+        self._last_connection_check = float("-inf")
+        self._last_connection_count = -1
+        self._last_progress_state = True
+        self._metrics = NDIStreamMetrics(
+            frames_sent=0,
+            frames_suppressed=0,
+            last_connection_count=-1,
+            last_send_timestamp=None,
+            last_activity_time=self._time_provider(),
+            paused_for_inactivity=False,
+        )
 
     def advance_and_send (self, delta_seconds: float, timestamp: Optional[float]) -> bool:
         # NOTE: This method is the critical frame pump. Any future refactor that
@@ -150,9 +201,34 @@ class _NDIStream:
         now = timestamp if timestamp is not None else self._time_provider()
         ndi_timestamp = self._timestamp_mapper(now)
 
-        progressed = bool(self.renderer.advance(float(delta_seconds)))
-        buffer = self._acquire_frame_buffer()
-        self.sender_handle.send(buffer, self.renderer.get_width(), self.renderer.get_height(), self.renderer.get_row_stride(), ndi_timestamp)
+        connection_count = self._poll_connection_count(now)
+        should_send = self._should_send_frames(connection_count)
+        should_pause = self.config.pause_when_inactive and not should_send
+
+        self._set_inactivity_pause(should_pause)
+
+        if should_pause:
+            progressed = self._last_progress_state
+        else:
+            progressed = bool(self.renderer.advance(float(delta_seconds)))
+            self._last_progress_state = progressed
+
+        if should_send:
+            buffer = self._acquire_frame_buffer()
+            self.sender_handle.send(
+                buffer,
+                self.renderer.get_width(),
+                self.renderer.get_height(),
+                self.renderer.get_row_stride(),
+                ndi_timestamp,
+            )
+            self._metrics.frames_sent += 1
+            self._metrics.last_send_timestamp = ndi_timestamp
+        else:
+            self._metrics.frames_suppressed += 1
+
+        self._metrics.last_connection_count = connection_count
+        self._metrics.last_activity_time = now
 
         return progressed
 
@@ -223,9 +299,56 @@ class _NDIStream:
         try:
             self.sender_handle.close()
         finally:
+            self._set_inactivity_pause(False)
             stop = getattr(self.renderer, "stop", None)
             if callable(stop):
                 stop()
+
+    def get_metrics (self) -> NDIStreamMetrics:
+        return NDIStreamMetrics(
+            frames_sent=self._metrics.frames_sent,
+            frames_suppressed=self._metrics.frames_suppressed,
+            last_connection_count=self._metrics.last_connection_count,
+            last_send_timestamp=self._metrics.last_send_timestamp,
+            last_activity_time=self._metrics.last_activity_time,
+            paused_for_inactivity=self._metrics.paused_for_inactivity,
+        )
+
+    def _poll_connection_count (self, now: float) -> int:
+        interval = max(0.0, self.config.inactive_connection_poll_interval)
+        if now - self._last_connection_check >= interval:
+            self._last_connection_check = now
+            self._last_connection_count = self._query_connection_count()
+        return self._last_connection_count
+
+    def _query_connection_count (self) -> int:
+        getter = getattr(self.sender_handle, "get_connection_count", None)
+        if callable(getter):
+            try:
+                return int(getter())
+            except Exception:  # pragma: no cover - diagnostics only
+                _logger.debug("get_connection_count failed", exc_info=True)
+        return -1
+
+    def _should_send_frames (self, connection_count: int) -> bool:
+        if not self.config.throttle_when_inactive:
+            return True
+        if connection_count < 0:
+            return True
+        return connection_count > 0
+
+    def _set_inactivity_pause (self, should_pause: bool) -> None:
+        if should_pause == self._metrics.paused_for_inactivity:
+            return
+
+        setter = getattr(self.renderer, "set_paused", None)
+        if callable(setter):
+            try:
+                setter(should_pause)
+            except Exception:  # pragma: no cover - renderer pause is best effort
+                _logger.debug("Failed to toggle renderer pause state", exc_info=True)
+
+        self._metrics.paused_for_inactivity = should_pause
 
 
 def _default_timestamp_mapper (seconds: float) -> int:
@@ -257,6 +380,7 @@ class _CyndiLibSenderHandle:
         self._sender = sender
         self._video_frame = video_frame
         self._use_async = use_async
+        self._last_connection_count = -1
 
     def send (self, buffer: memoryview, width: int, height: int, stride: int, timestamp: int) -> None:
         try:
@@ -303,6 +427,21 @@ class _CyndiLibSenderHandle:
             self._sender.close()
         except Exception:  # pragma: no cover - finalisation should not raise
             _logger.debug("NDI sender close failed", exc_info=True)
+
+    def get_connection_count (self) -> int:
+        getter = getattr(self._sender, "get_num_connections", None)
+        if not callable(getter):
+            return -1
+
+        try:
+            self._last_connection_count = int(getter(0))
+        except TypeError:
+            self._last_connection_count = int(getter())
+        except Exception:  # pragma: no cover - diagnostics only
+            _logger.debug("get_num_connections failed", exc_info=True)
+            return self._last_connection_count
+
+        return self._last_connection_count
 
 
 def _default_sender_factory (config: NDIStreamConfig, renderer: Any) -> SenderHandle:
@@ -381,6 +520,13 @@ class NDIOrchestrator:
             results[name] = stream.advance_and_send(delta_seconds, timestamp)
         return results
 
+    def get_stream_metrics (self, name: str) -> NDIStreamMetrics:
+        stream = self._streams[name]
+        return stream.get_metrics()
+
+    def get_all_stream_metrics (self) -> Dict[str, NDIStreamMetrics]:
+        return {name: stream.get_metrics() for name, stream in self._streams.items()}
+
     def apply_stream_control (self, name: str, action: str, parameters: Optional[Mapping[str, Any]] = None) -> Any:
         stream = self._streams[name]
         return stream.apply_control(action, parameters or {})
@@ -396,6 +542,10 @@ class NDIOrchestrator:
         if handler is None:
             raise KeyError(f"No handler registered for '{command}'")
         return handler(self, command, payload or {})
+
+    def apply_stream_metadata (self, name: str, metadata: Mapping[str, Mapping[str, Any]]) -> None:
+        stream = self._streams[name]
+        stream.sender_handle.apply_metadata(metadata)
 
     def close (self) -> None:
         for name in list(self._streams.keys()):
@@ -419,11 +569,9 @@ class NDIOrchestrator:
             if not ok:
                 raise RuntimeError(f"Failed to start state machine '{config.state_machine}'")
 
-        if config.state_machine_inputs:
-            for name, value in config.state_machine_inputs.items():
-                success = _set_state_machine_input(renderer, name, value)
-                if not success:
-                    raise RuntimeError(f"Failed to set state machine input '{name}'")
+        for input_name, value in config.state_machine_inputs.items():
+            if not _set_state_machine_input(renderer, input_name, value):
+                raise RuntimeError(f"Failed to set state machine input '{input_name}'")
 
         if hasattr(renderer, "set_paused"):
             renderer.set_paused(False)

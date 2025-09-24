@@ -97,6 +97,38 @@ Use `apply_stream_control()` to pause/resume playback, select artboards, or set 
 at runtime. Register custom control handlers via `register_control_handler()` if you expose REST/OSC
 interfaces above the orchestrator.
 
+### Command-line runner and control surfaces
+The package now ships with a convenience CLI so you can spin up a stream without writing a custom
+script. Invoke it with `python -m yup_ndi` and supply the renderer dimensions plus the `.riv` file:
+
+```powershell
+python -m yup_ndi --name StudioA --riv-file assets/demo.riv --width 1920 --height 1080 \
+    --animation Loop --ndi-groups ControlRoom --fps 59.94 --rest-port 5000 --osc-port 5001
+```
+
+The CLI supports the same configuration payload as `NDIStreamConfig`, including `--state-input`
+pairs, connection throttling toggles, and optional REST/OSC servers:
+
+- `--rest-port` spins up a Flask server that exposes `/streams`, `/streams/<name>`,
+  and `/streams/<name>/control` endpoints for remote automation.
+- `--osc-port` enables an OSC listener that accepts `/<namespace>/<stream>/control` messages and
+  reports metrics via `/<namespace>/<stream>/metrics`.
+- `--no-throttle` and `--pause-when-inactive` toggle the connection-aware behaviour described
+  below.
+
+### Connection-aware throttling
+`NDIStreamConfig` exposes three new fields to help conserve GPU/CPU time when nobody is watching:
+
+- `throttle_when_inactive` (default `True`) skips NDI uploads when `cyndilib` reports zero receivers.
+- `pause_when_inactive` pauses the renderer entirely while inactive so animations resume from where
+  they left off when a listener connects.
+- `inactive_connection_poll_interval` controls how often the orchestrator polls the sender for
+  updated connection counts.
+
+Runtime statistics are surfaced through `NDIStreamMetrics` and the CLI's periodic logging so you can
+track how many frames were sent or suppressed, whether throttling is active, and the most recent
+connection count.
+
 ## 5. Keep Tests Green
 The smoke tests in `python/tests/` validate both the binding surface and the orchestrator:
 

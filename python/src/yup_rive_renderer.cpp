@@ -143,7 +143,9 @@ namespace
                 "load_file",
                 [] (RiveOffscreenRenderer& self, const std::string& path, std::optional<std::string> artboard)
                 {
-                    auto result = self.load (File (String (path)), artboard ? String (*artboard) : String());
+                    const auto artboardName = artboard ? String (*artboard) : String();
+                    py::gil_scoped_release release;
+                    auto result = self.load (File (String (path)), artboardName);
                     handleResult (result);
                 },
                 "path"_a,
@@ -154,9 +156,11 @@ namespace
                 [] (RiveOffscreenRenderer& self, py::buffer buffer, std::optional<std::string> artboard)
                 {
                     auto bytes = copyBuffer (std::move (buffer));
+                    const auto artboardName = artboard ? String (*artboard) : String();
+                    py::gil_scoped_release release;
                     auto result = self.loadFromBytes (
                         Span<const uint8> (bytes.data(), bytes.size()),
-                        artboard ? String (*artboard) : String());
+                        artboardName);
                     handleResult (result);
                 },
                 "data"_a,
@@ -250,7 +254,11 @@ namespace
                 "Fires a trigger state-machine input and returns true if it existed.")
             .def (
                 "advance",
-                &RiveOffscreenRenderer::advance,
+                [] (RiveOffscreenRenderer& self, float deltaSeconds)
+                {
+                    py::gil_scoped_release release;
+                    return self.advance (deltaSeconds);
+                },
                 "delta_seconds"_a,
                 "Advances the current scene by the given time and renders a new frame.")
             .def (
