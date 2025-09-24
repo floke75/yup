@@ -159,6 +159,12 @@ class FakeFactories:
         return handle
 
 
+def test_stream_config_accepts_fraction_ratio () -> None:
+    rate = Fraction(60000, 1001)
+    config = NDIStreamConfig(name="frac", width=1, height=1, riv_bytes=b"riv", frame_rate=rate)
+    assert config.frame_rate is rate
+
+
 def test_orchestrator_advances_and_sends_frames () -> None:
     factories = FakeFactories()
     orchestrator = NDIOrchestrator(
@@ -704,6 +710,7 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     assert sender.video_frame is not None
     assert sender.video_frame.fourcc == "BGRA"
     assert sender.video_frame.resolutions[-1] == (2, 2)
+    assert sender.video_frame.frame_rate == Fraction(30000, 1001)
     assert sender.open_called is True
 
     progressed = orchestrator.advance_stream("default", 0.25, timestamp=1.0)

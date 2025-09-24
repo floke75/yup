@@ -103,8 +103,12 @@ script. Invoke it with `python -m yup_ndi` and supply the renderer dimensions pl
 
 ```powershell
 python -m yup_ndi --name StudioA --riv-file assets/demo.riv --width 1920 --height 1080 \
-    --animation Loop --ndi-groups ControlRoom --fps 59.94 --rest-port 5000 --osc-port 5001
+    --animation Loop --ndi-groups ControlRoom --fps 60000/1001 --rest-port 5000 --osc-port 5001
 ```
+
+`--fps` accepts either decimal values (e.g. `59.94`) or exact ratios such as `60000/1001` so you
+can preserve broadcast frame cadences when configuring NDI senders. Passing `0` keeps the renderer
+in wall-clock mode, matching the CLI's legacy behaviour.
 
 The CLI supports the same configuration payload as `NDIStreamConfig`, including `--state-input`
 pairs, connection throttling toggles, and optional REST/OSC servers:

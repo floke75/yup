@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+from fractions import Fraction
 import logging
 import signal
 import sys
@@ -46,7 +47,11 @@ def _build_parser () -> argparse.ArgumentParser:
     parser.add_argument("--animation", help="Optional animation to play immediately")
     parser.add_argument("--state-machine", help="Optional state machine to play immediately")
     parser.add_argument("--no-loop", action="store_true", help="Disable looping when --animation is provided")
-    parser.add_argument("--fps", type=float, default=60.0, help="Frame rate to target; set to 0 to use wall-clock deltas")
+    parser.add_argument(
+        "--fps",
+        default="60",
+        help="Frame rate to target; accepts floats or ratios like 60000/1001; set to 0 to use wall-clock deltas",
+    )
     parser.add_argument("--ndi-groups", default="", help="Comma-separated NDI group names")
     parser.add_argument("--no-clock-video", dest="clock_video", action="store_false", default=True, help="Disable NDI video clocking")
     parser.add_argument("--clock-audio", action="store_true", help="Enable NDI audio clocking")
@@ -101,17 +106,45 @@ def _coerce_scalar (value: str) -> Any:
             return value
 
 
+def _parse_frame_rate (value: Any) -> tuple[Optional[Fraction], Optional[float]]:
+    if value is None:
+        return None, None
+
+    if isinstance(value, Fraction):
+        fps_fraction = value
+    elif isinstance(value, (int, float)):
+        fps_value = float(value)
+        if fps_value <= 0:
+            return None, None
+        return Fraction(fps_value).limit_denominator(), fps_value
+    else:
+        text = str(value).strip()
+        if not text:
+            raise ValueError("--fps expects a positive number or ratio")
+
+        try:
+            fps_fraction = Fraction(text)
+        except (ValueError, ZeroDivisionError) as exc:
+            raise ValueError(f"Invalid frame rate '{value}'") from exc
+
+    if fps_fraction <= 0:
+        return None, None
+
+    return fps_fraction, float(fps_fraction)
+
+
 class _FramePump:
     def __init__ (
         self,
         orchestrator: NDIOrchestrator,
         stream_name: str,
-        target_fps: float,
+        target_fps: Optional[float],
         metrics_interval: float,
     ) -> None:
         self._orchestrator = orchestrator
         self._stream_name = stream_name
-        self._delta = 1.0 / target_fps if target_fps > 0 else None
+        fps_value = float(target_fps) if target_fps is not None else None
+        self._delta = 1.0 / fps_value if fps_value is not None and fps_value > 0 else None
         self._metrics_interval = metrics_interval
         self._stop_event = threading.Event()
 
@@ -180,14 +213,13 @@ def main (argv: Optional[Sequence[str]] = None) -> int:
         sender_options = _parse_key_value_pairs(args.sender_option, "--sender-option")
         metadata_pairs = _parse_key_value_pairs(args.metadata, "--metadata")
         state_inputs = _parse_state_inputs(args.state_input)
+        frame_rate_fraction, pump_fps = _parse_frame_rate(args.fps)
     except ValueError as exc:
         parser.error(str(exc))
 
     metadata: MutableMapping[str, Mapping[str, Any]] = {}
     if metadata_pairs:
         metadata["ndi"] = metadata_pairs
-
-    frame_rate: Optional[float] = args.fps if args.fps > 0 else None
 
     config = NDIStreamConfig(
         name=args.name,
@@ -198,7 +230,7 @@ def main (argv: Optional[Sequence[str]] = None) -> int:
         animation=args.animation,
         loop_animation=not args.no_loop,
         state_machine=args.state_machine,
-        frame_rate=frame_rate,
+        frame_rate=frame_rate_fraction,
         ndi_groups=args.ndi_groups,
         clock_video=args.clock_video,
         clock_audio=args.clock_audio,
@@ -226,7 +258,7 @@ def main (argv: Optional[Sequence[str]] = None) -> int:
 
         active_servers.append(start_osc_server(orchestrator, host=args.osc_host, port=args.osc_port, namespace=args.osc_namespace))
 
-    pump = _FramePump(orchestrator, args.name, args.fps, args.metrics_interval)
+    pump = _FramePump(orchestrator, args.name, pump_fps, args.metrics_interval)
 
     try:
         pump.run()
