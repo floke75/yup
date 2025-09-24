@@ -876,3 +876,33 @@ def test_default_renderer_factory_validates_staging_buffer_count (monkeypatch: p
 
     with pytest.raises(ValueError):
         orchestrator_module._default_renderer_factory(config)
+
+
+def test_default_renderer_factory_surfaces_renderer_error (monkeypatch: pytest.MonkeyPatch) -> None:
+    class StubRenderer:
+        def __init__ (self, width: int, height: int, staging_buffer_count: int = 1) -> None:
+            assert staging_buffer_count == 1
+            self._width = width
+            self._height = height
+
+        def is_valid (self) -> bool:
+            return False
+
+        def get_last_error (self) -> str:
+            return "Device lost"
+
+    monkeypatch.setattr(orchestrator_module, "RiveOffscreenRenderer", StubRenderer)
+
+    config = NDIStreamConfig(
+        name="broken",
+        width=1920,
+        height=1080,
+        riv_bytes=b"riv",
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        orchestrator_module._default_renderer_factory(config)
+
+    message = str(excinfo.value)
+    assert "Failed to initialise RiveOffscreenRenderer for 1920x1080" in message
+    assert "Device lost" in message

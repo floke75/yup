@@ -483,7 +483,19 @@ def _default_renderer_factory (config: NDIStreamConfig) -> Any:
 
     renderer = RiveOffscreenRenderer(config.width, config.height, staging_buffer_count)
     if not renderer.is_valid():
-        raise RuntimeError("Failed to initialise RiveOffscreenRenderer")
+        detail = ""
+        get_last_error = getattr(renderer, "get_last_error", None)
+        if callable(get_last_error):  # pragma: no branch - exercised in tests via stub
+            try:
+                detail = str(get_last_error()).strip()
+            except Exception:  # pragma: no cover - defensive conversion guard
+                detail = ""
+
+        message = f"Failed to initialise RiveOffscreenRenderer for {config.width}x{config.height}"
+        if detail:
+            message = f"{message}: {detail}"
+
+        raise RuntimeError(message)
 
     return renderer
 
