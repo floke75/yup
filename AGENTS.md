@@ -109,6 +109,9 @@ Primary module headers (e.g., `yup_graphics.h`) must also include the declaratio
 2. **Integration testing:** Add or extend combined tests that exercise the renderer bindings feeding the NDI orchestrator (mocked senders acceptable in CI).
 3. **Performance validation:** Profile renderer → Python throughput to ensure zero-copy semantics on Windows hardware.
 
+# Packaging
+- Run `python tools/package_wheel.py` to produce a release-mode build and wheel.
+
 ## Workflow Expectations
 - Analyse existing helpers (e.g., `modules/yup_graphics/`, `modules/yup_core/`) before introducing new abstractions; reuse utilities wherever feasible.
 - Keep build flags, documentation, and scripts aligned with Windows 11 + MSVC 2022 assumptions. Non-Windows builds may remain stubbed but must compile.
