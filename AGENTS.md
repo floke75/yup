@@ -17,6 +17,16 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
 | Documentation & developer workflow | ⚠️ Needs expansion in `docs/` and `tools/` to describe Windows build steps, wheel packaging, and orchestration usage. |
 
 ## Documentation Cross-References
+- **Mandatory:** ALWAYS update the relevant documentation whenever you change code. Every feature, bug
+  fix, or behaviour tweak must be reflected in the docs before the worktree is considered complete.
+- **Primary documentation entry points:**
+  - `README.md` – quickstart build/test recipes and API overview.
+  - `docs/rive_ndi_overview.md` – Windows-focused walkthrough of the renderer → NDI flow.
+  - `docs/Rive to NDI Guide.md` – detailed step-by-step orchestration and tooling guide.
+  - `docs/Windows Build and Packaging.md` – MSVC toolchain, packaging, and release notes.
+  - `docs/BUILD_WINDOWS.md` – legacy but still-referenced Windows build primer.
+  - `docs/Building Plugins.md` and `docs/Building Standalone.md` – ancillary build targets.
+  - `docs/YUP Module Format.md` – module metadata expectations.
 - **Quick orientation:** Start with the redundancy-pruning checklist in `README.md` to understand the trim plan for legacy modules and the guardrails that must remain while focusing on the Rive → NDI path.
 - **Rive → NDI flow:** The canonical walkthrough lives in `docs/Rive to NDI Guide.md`. It maps renderer classes to Python bindings, calls out the minimal module surface needed for transmission, and links TODOs for each subsystem.
 - **Legacy dependency audit:** Inline breadcrumbs inside `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.*` and `python/yup_ndi/orchestrator.py` enumerate bindings/tests that must stay aligned if refactors delete surrounding helpers.

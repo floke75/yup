@@ -733,6 +733,85 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     assert sender.closed is True
 
 
+def test_fractional_frame_rate_produces_evenly_spaced_timestamps () -> None:
+    factories = FakeFactories()
+    base_time = 10.0
+    fps = Fraction(30000, 1001)
+    period_seconds = float(Fraction(1001, 30000))
+
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        time_provider=lambda: base_time,
+    )
+
+    config = NDIStreamConfig(
+        name="fractional",
+        width=2,
+        height=2,
+        riv_bytes=b"riv bytes",
+        frame_rate=fps,
+    )
+
+    orchestrator.add_stream(config)
+
+    for index in range(5):
+        timestamp = base_time + period_seconds * index
+        start_timestamp = base_time if index == 0 else None
+        orchestrator.advance_stream(
+            "fractional",
+            period_seconds,
+            timestamp=timestamp,
+            start_timestamp=start_timestamp,
+        )
+
+    sender = factories.senders["fractional"]
+    timestamps = [call.timestamp for call in sender.calls]
+    assert len(timestamps) == 5
+
+    anchor_100ns = int(base_time * 10_000_000)
+    frame_period_100ns = Fraction(10_000_000, 1) / fps
+    expected = [int(Fraction(anchor_100ns, 1) + frame_period_100ns * i) for i in range(5)]
+
+    assert timestamps == expected
+
+
+def test_set_stream_start_time_primes_anchor () -> None:
+    factories = FakeFactories()
+    base_time = 12.5
+    fps = Fraction(30000, 1001)
+    period_seconds = float(Fraction(1001, 30000))
+
+    orchestrator = NDIOrchestrator(
+        renderer_factory=factories.renderer,
+        sender_factory=factories.sender,
+        time_provider=lambda: base_time + period_seconds,
+    )
+
+    config = NDIStreamConfig(
+        name="anchored",
+        width=2,
+        height=2,
+        riv_bytes=b"riv bytes",
+        frame_rate=fps,
+    )
+
+    orchestrator.add_stream(config)
+    orchestrator.set_stream_start_time("anchored", base_time)
+
+    orchestrator.advance_stream(
+        "anchored",
+        period_seconds,
+        timestamp=base_time + period_seconds,
+    )
+
+    sender = factories.senders["anchored"]
+    assert sender.calls, "Expected a frame send"
+
+    first_timestamp = sender.calls[0].timestamp
+    assert first_timestamp == int(base_time * 10_000_000)
+
+
 def test_default_renderer_factory_respects_staging_buffer_count (monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, tuple[int, int, int]] = {}
 

@@ -154,6 +154,14 @@ class _FramePump:
     def run (self) -> None:
         previous_time = time.perf_counter()
         last_metrics = time.monotonic()
+        start_timestamp: Optional[float] = previous_time
+
+        if start_timestamp is not None:
+            try:
+                self._orchestrator.set_stream_start_time(self._stream_name, start_timestamp)
+            except KeyError:
+                _logger.error("Stream '%s' is no longer registered", self._stream_name)
+                return
 
         def _handle_signal (signum: int, frame: Optional[object]) -> None:  # pragma: no cover - signal handler
             _logger.info("Received signal %s; stopping", signum)
@@ -165,17 +173,27 @@ class _FramePump:
         signal.signal(signal.SIGTERM, _handle_signal)
 
         try:
+            first_iteration = True
             while not self._stop_event.is_set() and self._stream_name in self._orchestrator.list_streams():
                 now = time.perf_counter()
                 delta = self._delta if self._delta is not None else max(0.0, now - previous_time)
                 timestamp = now
+                frame_start = start_timestamp if first_iteration else None
                 try:
-                    self._orchestrator.advance_stream(self._stream_name, delta, timestamp)
+                    self._orchestrator.advance_stream(
+                        self._stream_name,
+                        delta,
+                        timestamp,
+                        start_timestamp=frame_start,
+                    )
                 except KeyError:
                     _logger.error("Stream '%s' is no longer registered", self._stream_name)
                     break
 
                 previous_time = now if self._delta is None else previous_time + self._delta
+                if first_iteration:
+                    start_timestamp = None
+                    first_iteration = False
 
                 if self._metrics_interval > 0 and (time.monotonic() - last_metrics) >= self._metrics_interval:
                     metrics = self._orchestrator.get_stream_metrics(self._stream_name)
