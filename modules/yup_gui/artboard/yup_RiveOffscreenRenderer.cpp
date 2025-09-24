@@ -120,8 +120,8 @@ struct RiveOffscreenRenderer::Impl
     };
 
     explicit Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn)
-        : width (widthIn),
-          height (heightIn),
+        : width (std::max (widthIn, 0)),
+          height (std::max (heightIn, 0)),
           rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
           frameSize (rowStride * static_cast<std::size_t> (std::max (heightIn, 0))),
           stagingBufferCount (std::max<std::size_t> (std::size_t { 1 }, stagingBufferCountIn)),
@@ -130,10 +130,21 @@ struct RiveOffscreenRenderer::Impl
           frameStates (stagingBufferCount, FrameState::Available),
           frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0))
     {
+        if (widthIn <= 0 || heightIn <= 0)
+        {
+            lastError = String::formatted (
+                "Renderer dimensions must be positive (received %dx%d)",
+                widthIn,
+                heightIn);
+            return;
+        }
+
         initialise();
     }
 
     ~Impl() = default;
+
+    static String describeMapFailure (HRESULT hr);
 
     bool isValid() const noexcept { return initialised; }
 
@@ -296,8 +307,7 @@ struct RiveOffscreenRenderer::Impl
         scene = animation.get();
         scene->advanceAndApply (0.0f);
         paused = false;
-        renderFrame();
-        return true;
+        return renderFrame();
     }
 
     bool playStateMachine (const String& name)
@@ -316,8 +326,7 @@ struct RiveOffscreenRenderer::Impl
         scene = stateMachine.get();
         scene->advanceAndApply (0.0f);
         paused = false;
-        renderFrame();
-        return true;
+        return renderFrame();
     }
 
     void stop()
@@ -377,8 +386,8 @@ struct RiveOffscreenRenderer::Impl
             return false;
 
         const auto keepAnimating = scene->advanceAndApply (deltaSeconds);
-        renderFrame();
-        return keepAnimating;
+        const auto rendered = renderFrame();
+        return keepAnimating && rendered;
     }
 
     void setPaused (bool shouldPause) { paused = shouldPause; }
@@ -413,6 +422,24 @@ private:
         ComPtr<ID3D11Device> createdDevice;
         ComPtr<ID3D11DeviceContext> createdContext;
 
+        const auto describeFailure = [] (const char* driverName, HRESULT hr)
+        {
+            const auto message = makeErrorMessage (hr);
+            if (! message.empty())
+            {
+                return String::formatted (
+                    "D3D11CreateDevice (%s) failed (0x%08X): %s",
+                    driverName,
+                    static_cast<unsigned int> (hr),
+                    message.c_str());
+            }
+
+            return String::formatted (
+                "D3D11CreateDevice (%s) failed (0x%08X)",
+                driverName,
+                static_cast<unsigned int> (hr));
+        };
+
         auto hr = D3D11CreateDevice (nullptr,
                                       D3D_DRIVER_TYPE_HARDWARE,
                                       nullptr,
@@ -426,8 +453,27 @@ private:
 
         if (FAILED (hr))
         {
-            lastError = String (makeErrorMessage (hr));
-            return;
+            const auto hardwareError = describeFailure ("hardware", hr);
+
+            hr = D3D11CreateDevice (nullptr,
+                                     D3D_DRIVER_TYPE_WARP,
+                                     nullptr,
+                                     creationFlags,
+                                     requestedLevels,
+                                     static_cast<UINT> (std::size (requestedLevels)),
+                                     D3D11_SDK_VERSION,
+                                     createdDevice.GetAddressOf(),
+                                     nullptr,
+                                     createdContext.GetAddressOf());
+
+            if (FAILED (hr))
+            {
+                const auto warpError = describeFailure ("WARP", hr);
+                lastError = hardwareError;
+                lastError += "; ";
+                lastError += warpError;
+                return;
+            }
         }
 
         device = std::move (createdDevice);
@@ -455,7 +501,10 @@ private:
         hr = device->CreateTexture2D (&desc, nullptr, renderTexture.GetAddressOf());
         if (FAILED (hr))
         {
-            lastError = String (makeErrorMessage (hr));
+            lastError = String::formatted (
+                "CreateTexture2D (render target) failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
             return;
         }
 
@@ -466,7 +515,10 @@ private:
             hr = device->CreateTexture2D (&desc, nullptr, texture.GetAddressOf());
             if (FAILED (hr))
             {
-                lastError = String (makeErrorMessage (hr));
+                lastError = String::formatted (
+                    "CreateTexture2D (staging) failed (0x%08X): %s",
+                    static_cast<unsigned int> (hr),
+                    makeErrorMessage (hr).c_str());
                 return;
             }
         }
@@ -481,6 +533,23 @@ private:
 
         renderer = std::make_unique<rive::RiveRenderer> (renderContext.get());
         initialised = true;
+        lastError.clear();
+    }
+
+    static String describeMapFailure (HRESULT hr)
+    {
+        const auto message = makeErrorMessage (hr);
+        if (! message.empty())
+        {
+            return String::formatted (
+                "ID3D11DeviceContext::Map failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                message.c_str());
+        }
+
+        return String::formatted (
+            "ID3D11DeviceContext::Map failed (0x%08X)",
+            static_cast<unsigned int> (hr));
     }
 
     void resetScenes()
@@ -560,10 +629,10 @@ private:
         }
     }
 
-    void renderFrame()
+    bool renderFrame()
     {
         if (! initialised || scene == nullptr)
-            return;
+            return false;
 
         const auto writeIndex = acquireWriteIndex();
 
@@ -590,12 +659,12 @@ private:
         auto hr = deviceContext->Map (stagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
         if (FAILED (hr))
         {
-            lastError = String (makeErrorMessage (hr));
+            lastError = describeMapFailure (hr);
 
             std::unique_lock lock (frameMutex);
             frameStates[writeIndex] = FrameState::Available;
             frameCondition.notify_one();
-            return;
+            return false;
         }
 
         auto* srcBytes = static_cast<const uint8*> (mapped.pData);
@@ -618,6 +687,7 @@ private:
         }
 
         frameCondition.notify_one();
+        return true;
     }
 
     Microsoft::WRL::ComPtr<ID3D11Device> device;
@@ -734,7 +804,8 @@ private:
         }
 
         scene->advanceAndApply (0.0f);
-        renderFrame();
+        if (! renderFrame())
+            return Result::fail (lastError);
 
         return Result::ok();
     }
@@ -755,13 +826,20 @@ namespace yup
 struct RiveOffscreenRenderer::Impl
 {
     Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn)
-        : width (widthIn),
-          height (heightIn),
+        : width (std::max (widthIn, 0)),
+          height (std::max (heightIn, 0)),
           rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
           frameSize (rowStride * static_cast<std::size_t> (std::max (heightIn, 0))),
           stagingBufferCount (std::max<std::size_t> (std::size_t { 1 }, stagingBufferCountIn)),
           frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0))
     {
+        if (widthIn <= 0 || heightIn <= 0)
+        {
+            lastError = String::formatted (
+                "Renderer dimensions must be positive (received %dx%d)",
+                widthIn,
+                heightIn);
+        }
     }
 
     bool isValid() const noexcept { return false; }

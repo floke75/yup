@@ -62,3 +62,12 @@ def test_constructor_accepts_staging_buffer_count () -> None:
     instance = yup_rive_renderer.RiveOffscreenRenderer(4, 4, staging_buffer_count=3)
     assert instance.get_width() == 4
     assert instance.get_height() == 4
+
+
+def test_load_bytes_requires_contiguous_memory (renderer: Any) -> None:
+    numpy = pytest.importorskip("numpy")
+
+    non_contiguous = numpy.arange(16, dtype=numpy.uint8)[::2]
+
+    with pytest.raises(ValueError, match="contiguous 1D buffer"):
+        renderer.load_bytes(non_contiguous)

@@ -108,7 +108,17 @@ namespace
         const auto info = buffer.request();
 
         if (info.ndim != 1)
-            throw py::value_error ("Expected a contiguous 1D buffer of bytes");
+            throw py::value_error ("Expected a contiguous 1D buffer of uint8 values");
+
+        if (info.itemsize != 1)
+            throw py::value_error ("Expected a contiguous 1D buffer of uint8 values");
+
+        if (! info.strides.empty())
+        {
+            const auto stride = info.strides.front();
+            if (stride != static_cast<py::ssize_t> (info.itemsize))
+                throw py::value_error ("Expected a contiguous 1D buffer of uint8 values");
+        }
 
         std::vector<uint8> bytes (static_cast<std::size_t> (info.size) * static_cast<std::size_t> (info.itemsize));
 

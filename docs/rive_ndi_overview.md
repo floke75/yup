@@ -12,6 +12,9 @@ configurable staging-buffer ring to balance latency against throughput.
 zero-copy frame views that the orchestrator can forward directly to NDI senders.
 - **NDI orchestration:** The `yup_ndi` package manages multiple renderers, maintains timing metadata,
 forwards frames to `cyndilib` senders, and provides runtime control hooks.
+- **Production-ready failure handling:** The renderer now validates requested dimensions, falls back to
+  WARP when hardware devices refuse to initialise, and propagates descriptive errors (including
+  HRESULT codes) through the Python bindings and orchestrator so operators see actionable diagnostics.
 - **Focused test coverage:** GoogleTests validate renderer invariants while `pytest` suites exercise
 the binding and orchestrator behaviour using fake senders/renderers so CI does not require GPU or NDI
 DLLs.
