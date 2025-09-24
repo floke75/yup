@@ -225,17 +225,23 @@ class _NDIStream:
             last_activity_time=self._time_provider(),
             paused_for_inactivity=False,
         )
-        self._frame_period_100ns: Optional[Fraction] = None
+        self._frame_period_num: Optional[int]
+        self._frame_period_den: Optional[int]
         self._frame_index = 0
-        self._anchor_100ns: Optional[Fraction] = None
+        self._anchor_100ns: Optional[int] = None
         self._pending_anchor_time = start_time
+        self._next_timestamp_100ns: Optional[int] = None
+        self._frame_remainder = 0
 
         if self.config.frame_rate is not None:
             if self.config.frame_rate <= 0:
                 raise ValueError("frame_rate must be positive when provided")
-            self._frame_period_100ns = Fraction(10_000_000, 1) / self.config.frame_rate
+            frame_period = Fraction(10_000_000, 1) / self.config.frame_rate
+            self._frame_period_num = frame_period.numerator
+            self._frame_period_den = frame_period.denominator
         else:
-            self._frame_period_100ns = None
+            self._frame_period_num = None
+            self._frame_period_den = None
 
     def set_start_time (self, start_time: Optional[float]) -> None:
         """Prime the deterministic timeline anchor for the next frame send."""
@@ -287,16 +293,17 @@ class _NDIStream:
         return progressed
 
     def _select_timestamp (self, frame_time: float, start_timestamp: Optional[float]) -> int:
-        if self._frame_period_100ns is None:
+        if self._frame_period_num is None or self._frame_period_den is None:
             return self._timestamp_mapper(frame_time)
 
         anchor = self._ensure_anchor(frame_time, start_timestamp)
-        timestamp_fraction = anchor + self._frame_index * self._frame_period_100ns
-        ndi_timestamp = int(timestamp_fraction)
+        timestamp = self._next_timestamp_100ns if self._next_timestamp_100ns is not None else anchor
+        ndi_timestamp = int(timestamp)
+        self._advance_timeline()
         self._frame_index += 1
         return ndi_timestamp
 
-    def _ensure_anchor (self, frame_time: float, start_timestamp: Optional[float]) -> Fraction:
+    def _ensure_anchor (self, frame_time: float, start_timestamp: Optional[float]) -> int:
         anchor = self._anchor_100ns
         if anchor is not None:
             return anchor
@@ -307,11 +314,13 @@ class _NDIStream:
         if candidate is None:
             candidate = frame_time
 
-        anchor = Fraction(int(candidate * 10_000_000), 1)
-        self._anchor_100ns = anchor
+        anchor_int = int(candidate * 10_000_000)
+        self._anchor_100ns = anchor_int
         self._pending_anchor_time = None
         self._frame_index = 0
-        return anchor
+        self._frame_remainder = 0
+        self._next_timestamp_100ns = anchor_int
+        return anchor_int
 
     def _acquire_frame_buffer (self) -> memoryview:
         view_getter = getattr(self.renderer, "acquire_frame_view", None)
@@ -442,11 +451,21 @@ class _NDIStream:
             self._reset_frame_timeline()
 
     def _reset_frame_timeline (self, start_time: Optional[float] = None) -> None:
-        if self._frame_period_100ns is None:
+        if self._frame_period_num is None or self._frame_period_den is None:
             return
         self._frame_index = 0
         self._anchor_100ns = None
         self._pending_anchor_time = start_time
+        self._frame_remainder = 0
+        self._next_timestamp_100ns = None
+
+    def _advance_timeline (self) -> None:
+        if self._frame_period_num is None or self._frame_period_den is None:
+            return
+        total = self._frame_remainder + self._frame_period_num
+        increment, self._frame_remainder = divmod(total, self._frame_period_den)
+        if self._next_timestamp_100ns is not None:
+            self._next_timestamp_100ns += increment
 
 
 def _default_timestamp_mapper (seconds: float) -> int:
