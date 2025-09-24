@@ -56,3 +56,9 @@ def test_acquire_frame_view_matches_frame_bytes(renderer: Any) -> None:
     frame_bytes = renderer.get_frame_bytes()
     assert isinstance(frame_bytes, (bytes, bytearray))
     assert flat.tobytes() == bytes(frame_bytes)
+
+
+def test_constructor_accepts_staging_buffer_count () -> None:
+    instance = yup_rive_renderer.RiveOffscreenRenderer(4, 4, staging_buffer_count=3)
+    assert instance.get_width() == 4
+    assert instance.get_height() == 4

@@ -404,7 +404,12 @@ void registerYupGuiBindings (py::module_& m)
     py::class_<RiveOffscreenRenderer> classRiveRenderer (m, "RiveOffscreenRenderer");
 
     classRiveRenderer
-        .def (py::init<int, int>(), "width"_a, "height"_a, "Create an offscreen renderer with the desired output size.")
+        .def (
+            py::init<int, int, std::size_t>(),
+            "width"_a,
+            "height"_a,
+            "staging_buffer_count"_a = std::size_t { 1 },
+            "Create an offscreen renderer with the desired output size and staging buffer depth.")
         .def_property_readonly ("is_valid", &RiveOffscreenRenderer::isValid, "True when Direct3D resources are available.")
         .def ("load_file",
               [] (RiveOffscreenRenderer& self, const std::string& path, const std::optional<std::string>& artboard)

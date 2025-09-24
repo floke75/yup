@@ -365,10 +365,27 @@ def _default_renderer_factory (config: NDIStreamConfig) -> Any:
     if RiveOffscreenRenderer is None:  # pragma: no cover - executed only in production without injection
         raise ImportError("yup_rive_renderer is not available; build the extension before creating streams")
 
-    if config.renderer_options:
-        _logger.warning("Renderer options are ignored by the default factory")
+    staging_buffer_count = 1
 
-    renderer = RiveOffscreenRenderer(config.width, config.height)
+    if config.renderer_options:
+        raw_count = config.renderer_options.get("staging_buffer_count")
+        if raw_count is not None:
+            try:
+                staging_buffer_count = int(raw_count)
+            except (TypeError, ValueError) as exc:  # pragma: no cover - defensive branch
+                raise ValueError("staging_buffer_count must be an integer") from exc
+
+            if staging_buffer_count < 1:
+                raise ValueError("staging_buffer_count must be at least 1")
+
+        unknown_keys = [key for key in config.renderer_options.keys() if key != "staging_buffer_count"]
+        if unknown_keys:
+            _logger.warning(
+                "Renderer options %s are not recognised by the default factory",
+                ", ".join(sorted(unknown_keys)),
+            )
+
+    renderer = RiveOffscreenRenderer(config.width, config.height, staging_buffer_count)
     if not renderer.is_valid():
         raise RuntimeError("Failed to initialise RiveOffscreenRenderer")
 

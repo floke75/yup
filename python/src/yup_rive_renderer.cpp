@@ -131,10 +131,11 @@ namespace
 
         renderer
             .def (
-                py::init<int, int>(),
+                py::init<int, int, std::size_t>(),
                 "width"_a,
                 "height"_a,
-                "Creates a renderer with the specified output dimensions.")
+                "staging_buffer_count"_a = std::size_t { 1 },
+                "Creates a renderer with the specified output dimensions and staging buffer depth.")
             .def (
                 "is_valid",
                 &RiveOffscreenRenderer::isValid,

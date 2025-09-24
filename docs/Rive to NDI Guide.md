@@ -50,7 +50,7 @@ The `yup_rive_renderer` module mirrors every method exposed by
 ```python
 from yup_rive_renderer import RiveOffscreenRenderer
 
-renderer = RiveOffscreenRenderer(width=1920, height=1080)
+renderer = RiveOffscreenRenderer(width=1920, height=1080, staging_buffer_count=3)
 if not renderer.is_valid():
     raise RuntimeError(renderer.get_last_error())
 
@@ -60,6 +60,10 @@ renderer.play_animation("Intro", loop=False)
 progressed = renderer.advance(1 / 60)
 frame = renderer.acquire_frame_view()  # zero-copy BGRA memoryview
 ```
+
+`staging_buffer_count` controls how many GPU readback textures the renderer keeps in flight. Increase
+the value (for example, when feeding multiple consumers) to smooth out bursts at the cost of a few
+frames of additional latency. Leave it at the default of `1` when you need lowest-latency updates.
 
 `acquire_frame_view()` returns a read-only `memoryview` that can be cast to a flat byte buffer or into
 `(height, width, 4)` NumPy arrays. `get_frame_bytes()` remains available when a defensive copy is
@@ -86,6 +90,7 @@ with NDIOrchestrator() as orchestrator:
             frame_rate=Fraction(60000, 1001),
             ndi_groups="ControlRoom",
             metadata={"ndi": {"comment": "Rive playback"}},
+            renderer_options={"staging_buffer_count": 3},
         )
     )
 
@@ -96,6 +101,11 @@ with NDIOrchestrator() as orchestrator:
 Use `apply_stream_control()` to pause/resume playback, select artboards, or set state-machine inputs
 at runtime. Register custom control handlers via `register_control_handler()` if you expose REST/OSC
 interfaces above the orchestrator.
+
+`renderer_options` accepts a `staging_buffer_count` entry that forwards to the renderer constructor,
+mirroring the direct Python API. Set it to a higher value when streams are consumed asynchronously or
+when a few extra milliseconds of buffering keeps throughput stable. Invalid or missing entries fall
+back to the default of `1` and raise descriptive errors when misconfigured.
 
 ### Command-line runner and control surfaces
 The package now ships with a convenience CLI so you can spin up a stream without writing a custom
