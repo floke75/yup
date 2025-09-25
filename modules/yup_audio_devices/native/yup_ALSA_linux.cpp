@@ -637,7 +637,7 @@ public:
 
         while (numCallbacks == 0)
         {
-            sleep (5);
+            Thread::sleep (5);
 
             if (--count < 0 || ! isThreadRunning())
             {
