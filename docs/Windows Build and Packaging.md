@@ -5,6 +5,23 @@ packaging the Python bindings, and validating the NDI orchestration path on Wind
 The steps assume Visual Studio 2022, Python 3.11+, and the Windows 10 or 11 SDK are
 installed.
 
+## 0. Automated bootstrap (optional)
+
+When you want a turnkey setup, run the PowerShell helper from a VS 2022 developer
+prompt:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+./tools/install_windows.ps1
+```
+
+The script creates (or reuses) `.venv`, installs build/test dependencies,
+configures the Visual Studio solution with audio modules disabled, builds the
+specified configuration (Release by default), produces the Python wheel,
+reinstalls it into the virtual environment, and runs the renderer/NDI smoke
+tests. Use `-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or
+`-InstallCyndilib` to adjust the workflow.
+
 ## 1. Prepare the environment
 
 1. Launch a **x64 Native Tools Command Prompt for VS 2022** so that MSVC, the Windows SDK,

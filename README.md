@@ -33,6 +33,27 @@ and orchestrator integration without requiring native NDI libraries during devel
 | `tools/`, `justfile` | Helper scripts and automation recipes for Windows builds and smoke tests. |
 
 ## Getting Started
+### One-Command Windows Setup
+If you prefer an automated bootstrap, run the PowerShell helper from a Visual Studio
+developer prompt (or any shell where `cl.exe`, `cmake`, and `py` are on `PATH`):
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+./tools/install_windows.ps1
+```
+
+The script provisions a `.venv` virtual environment, installs build requirements,
+configures the Visual Studio solution with audio modules disabled, compiles the
+selected configuration (Release by default), builds and reinstalls the Python
+wheel, and finishes by exercising the renderer/NDI smoke tests. Useful flags
+include:
+
+- `-Configuration Debug` – build the Debug configuration instead of Release.
+- `-SkipWheel` – stop after the native build (skips wheel creation and tests).
+- `-SkipSmokeTests` – build and install the wheel but omit the smoke tests.
+- `-InstallCyndilib` – install the optional `cyndilib==0.0.8` runtime into the
+  managed virtual environment.
+
 ### Prerequisites
 - Windows 10/11 with Visual Studio 2022 and the Windows SDK installed.
 - Python 3.10+ with `pip`, `cmake`, and `ninja` available.
