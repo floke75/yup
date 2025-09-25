@@ -245,7 +245,7 @@ bool Thread::waitForThreadToExit (const int timeOutMilliseconds) const
         if (timeOutMilliseconds >= 0 && Time::getMillisecondCounter() > timeoutEnd)
             return false;
 
-        sleep (2);
+        Thread::sleep (2);
     }
 
     return true;

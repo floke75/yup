@@ -100,3 +100,11 @@ when GPU or NDI runtimes are absent.
   before invoking `just python_wheel` or `python -m build`.
 - Cache the `build/` and `.venv/` folders between CI runs to avoid repeated CMake
   configuration and dependency installation costs.
+
+## Troubleshooting
+
+- **`'sleep': identifier not found` during the audio device build** – The Windows toolchain
+  does not provide the POSIX `sleep()` symbol, so any backend that still calls it will fail
+  to compile. Replace raw `sleep()`/`Sleep()` usages in platform code (e.g. the DirectSound
+  backend) with `Thread::sleep(milliseconds)` so the implementation maps cleanly onto the
+  Windows API.

@@ -1071,7 +1071,7 @@ private:
     {
         if (! threadShouldExit())
         {
-            sleep (5);
+            Thread::sleep (5);
 
             for (int i = 0; i < outChans.size(); ++i)
                 outChans.getUnchecked (i)->synchronisePosition();
@@ -1150,7 +1150,7 @@ public:
 
                     if (--count <= 0)
                     {
-                        Sleep (1);
+                        Thread::sleep (1);
                         count = maxCount;
                     }
 
@@ -1160,7 +1160,7 @@ public:
             }
             else
             {
-                sleep (1);
+                Thread::sleep (1);
             }
 
             const ScopedLock sl (startStopLock);
@@ -1177,7 +1177,7 @@ public:
             else
             {
                 outputBuffers.clear();
-                sleep (1);
+                Thread::sleep (1);
             }
         }
     }
@@ -1356,7 +1356,7 @@ String DSoundAudioIODevice::openDevice (const BigInteger& inputChannels,
             inChans.getUnchecked (i)->synchronisePosition();
 
         startThread (Priority::highest);
-        sleep (10);
+        Thread::sleep (10);
 
         notify();
     }
