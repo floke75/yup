@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 from .orchestrator import NDIOrchestrator
 
@@ -34,7 +34,13 @@ _logger = logging.getLogger(__name__)
 
 
 class OscControlServer:
-    """Expose :class:`NDIOrchestrator` controls via Open Sound Control messages."""
+    """Expose :class:`NDIOrchestrator` controls via Open Sound Control messages.
+
+    The server mirrors the orchestrator's control surface and replies to
+    ``/<namespace>/<stream>/metrics`` requests with a JSON payload summarising
+    recent frame counts and connection details so monitoring clients receive
+    immediate feedback.
+    """
 
     def __init__ (
         self,
@@ -46,6 +52,7 @@ class OscControlServer:
         try:  # pragma: no cover - exercised when python-osc is installed
             from pythonosc.dispatcher import Dispatcher
             from pythonosc.osc_server import ThreadingOSCUDPServer
+            from pythonosc.udp_client import SimpleUDPClient
         except ImportError as exc:  # pragma: no cover - import guard
             raise ImportError("python-osc is required for the OSC control server; install python-osc>=1.8") from exc
 
@@ -56,10 +63,16 @@ class OscControlServer:
         self._namespace = f"/{base_namespace}" if base_namespace else "/ndi"
         self._dispatcher = Dispatcher()
         self._dispatcher.map(f"{self._namespace}/*/control", self._handle_control)
-        self._dispatcher.map(f"{self._namespace}/*/metrics", self._handle_metrics)
+        self._dispatcher.map(
+            f"{self._namespace}/*/metrics",
+            self._handle_metrics,
+            needs_reply_address=True,
+        )
         self._server_factory = ThreadingOSCUDPServer
+        self._client_factory = SimpleUDPClient
         self._server: Any = None
         self._thread: threading.Thread | None = None
+        self._client_cache: Dict[Tuple[str, int], Any] = {}
 
     def __enter__ (self) -> "OscControlServer":
         self.start()
@@ -80,6 +93,7 @@ class OscControlServer:
 
     def close (self) -> None:
         if self._server is None:
+            self._client_cache.clear()
             return
 
         _logger.info("Stopping OSC control server on %s:%d%s", self._host, self._port, self._namespace)
@@ -88,6 +102,7 @@ class OscControlServer:
             self._thread.join(timeout=2.0)
         self._server = None
         self._thread = None
+        self._client_cache.clear()
 
     def _handle_control (self, address: str, *args: Any) -> None:
         stream_name = self._extract_stream_name(address)
@@ -109,7 +124,7 @@ class OscControlServer:
         except Exception:  # pragma: no cover - runtime guard
             _logger.exception("OSC control failed for stream '%s'", stream_name)
 
-    def _handle_metrics (self, address: str, *args: Any) -> None:
+    def _handle_metrics (self, client_address: Tuple[str, int], address: str, *args: Any) -> None:
         stream_name = self._extract_stream_name(address)
         if stream_name is None:
             _logger.warning("Ignoring OSC metrics request for malformed address '%s'", address)
@@ -128,6 +143,28 @@ class OscControlServer:
             "paused": metrics.paused_for_inactivity,
         }
         _logger.info("OSC metrics for %s: %s", stream_name, payload)
+
+        try:
+            host, port = client_address
+        except Exception:  # pragma: no cover - defensive parsing guard
+            _logger.debug("OSC metrics reply address malformed: %r", client_address)
+            return
+
+        cache_key = (str(host), int(port))
+        client = self._client_cache.get(cache_key)
+        if client is None:
+            try:
+                client = self._client_factory(cache_key[0], cache_key[1])
+            except Exception:  # pragma: no cover - client construction best effort
+                _logger.exception("Failed to create OSC reply client for %s", cache_key)
+                return
+            self._client_cache[cache_key] = client
+
+        message_path = f"{self._namespace}/{stream_name}/metrics"
+        try:
+            client.send_message(message_path, json.dumps(payload))
+        except Exception:  # pragma: no cover - best effort reply
+            _logger.exception("Failed to send OSC metrics response to %s", cache_key)
 
     def _extract_stream_name (self, address: str) -> str | None:
         parts = address.strip("/").split("/")
