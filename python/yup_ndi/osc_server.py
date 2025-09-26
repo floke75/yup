@@ -124,17 +124,39 @@ class OscControlServer:
         except Exception:  # pragma: no cover - runtime guard
             _logger.exception("OSC control failed for stream '%s'", stream_name)
 
-    def _handle_metrics (self, address: str, *args: Any) -> None:
-        stream_name = self._extract_stream_name(address)
-        if stream_name is None:
-            _logger.warning("Ignoring OSC metrics request for malformed address '%s'", address)
+    def _handle_metrics (self, address: Any, *args: Any) -> None:
+        resolved_address: Any = address
+        client_address: Any | None = None
+
+        if isinstance(address, tuple):
+            client_address = address
+            if not args:
+                _logger.warning(
+                    "OSC metrics request missing address string for client %r", client_address
+                )
+                return
+            resolved_address = args[0]
+        elif args:
+            potential_client = args[-1]
+            if isinstance(potential_client, tuple) and len(potential_client) == 2:
+                client_address = potential_client
+
+        if not isinstance(resolved_address, str):
+            _logger.warning(
+                "Ignoring OSC metrics request with non-string address %r", resolved_address
+            )
             return
 
-        if not args:
+        stream_name = self._extract_stream_name(resolved_address)
+        if stream_name is None:
+            _logger.warning(
+                "Ignoring OSC metrics request for malformed address '%s'", resolved_address
+            )
+            return
+
+        if client_address is None:
             _logger.warning("OSC metrics request for '%s' missing reply address", stream_name)
             return
-
-        client_address = args[-1]
 
         try:
             metrics = self._orchestrator.get_stream_metrics(stream_name)

@@ -155,5 +155,8 @@ def test_metrics_requests_receive_json_response (monkeypatch: pytest.MonkeyPatch
     handler("/ndi/demo/metrics", "ignored", client_address)
     assert len(client.messages) == 3
 
+    handler(client_address, "/ndi/demo/metrics")
+    assert len(client.messages) == 4
+
     server.close()
     assert server._client_cache == {}  # type: ignore[attr-defined]
