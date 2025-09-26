@@ -14,7 +14,8 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
 | Python renderer binding | ✅ `yup_rive_renderer` pybind11 module wraps renderer construction (including staging-buffer depth), artboard/animation APIs, and exposes zero-copy frame views. | `python/src/yup_rive_renderer.cpp`, build glue in `python/CMakeLists.txt`, packaging metadata in `python/pyproject.toml` |
 | Python NDI orchestration | ✅ `yup_ndi` package manages multi-stream orchestration, timestamp mapping, metadata dispatch, and optional control hooks using mocked `cyndilib` senders for tests while forwarding renderer options such as staging-buffer depth. | `python/yup_ndi/__init__.py`, `python/yup_ndi/orchestrator.py`, tests under `python/tests/test_yup_ndi/` |
 | Python test harness | ✅ `pytest` suites cover binding behaviour, orchestrator frame flow, and provide fake renderer/sender utilities that avoid native DLL requirements. | `python/tests/` |
-| Documentation & developer workflow | ⚠️ Needs expansion in `docs/` and `tools/` to describe Windows build steps, wheel packaging, and orchestration usage. |
+| Browser-based control panel | ✅ Static control panel previews `.riv` files in-browser, surfaces artboard/animation metadata, streams live JSON payloads for orchestrator smoke tests, and links back to packaged demo builds for reviewers. | `standalone/rive_frontend/`, minified demo builds in `docs/demos/` |
+| Documentation & developer workflow | 🚧 Docs now include Windows onboarding (`docs/Windows Build and Packaging.md`) and a `tools/install_windows.ps1` bootstrap script, but the orchestration walkthrough and troubleshooting appendix still need richer end-to-end examples. |
 
 ## Documentation Cross-References
 - **Mandatory:** ALWAYS update the relevant documentation whenever you change code. Every feature, bug
@@ -27,11 +28,13 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
   - `docs/BUILD_WINDOWS.md` – legacy but still-referenced Windows build primer.
   - `docs/Building Plugins.md` and `docs/Building Standalone.md` – ancillary build targets.
   - `docs/YUP Module Format.md` – module metadata expectations.
+  - `standalone/rive_frontend/` – temporary browser control panel; keep copy updates mirrored in the minified builds under `docs/demos/` and ensure the generated payload schema matches `python/yup_ndi/orchestrator.py`.
 - **Quick orientation:** Start with the redundancy-pruning checklist in `README.md` to understand the trim plan for legacy modules and the guardrails that must remain while focusing on the Rive → NDI path.
 - **Rive → NDI flow:** The canonical walkthrough lives in `docs/Rive to NDI Guide.md`. It maps renderer classes to Python bindings, calls out the minimal module surface needed for transmission, and links TODOs for each subsystem.
 - **Legacy dependency audit:** Inline breadcrumbs inside `modules/yup_gui/artboard/yup_RiveOffscreenRenderer.*` and `python/yup_ndi/orchestrator.py` enumerate bindings/tests that must stay aligned if refactors delete surrounding helpers.
 - **Testing expectations:** Use the guidance embedded in `python/tests/conftest.py` and `python/tests/common.py` to respect the mock strategy for environments without the native extension. Honour the skip markers before trimming any "legacy" fixtures that keep pytest green.
 - **Build/packaging recipes:** Use the pointers in `tools/` and the notes in `python/pyproject.toml` to keep MSVC/Ninja build flags, version pinning, and wheel metadata consistent with the Windows toolchain assumptions documented above.
+  - `tools/install_windows.ps1` now automates the end-to-end Windows build, wheel packaging, and smoke tests—keep it in sync with manual instructions and update its dependency pins whenever the Python layer adds requirements.
 
 ## Codebase Map
 Use this quick-reference map to locate the canonical implementations before introducing new functionality. Reviewing these areas first helps avoid duplicating existing work.
@@ -48,11 +51,11 @@ Use this quick-reference map to locate the canonical implementations before intr
 
 ### Tooling, Examples, and Docs
 - `tools/`: Build, packaging, and CI helpers (`package_wheel.py`, environment setup scripts).
-- `docs/`: Conceptual guides, including the Rive → NDI walkthrough. Add new workflow documentation here.
+- `docs/`: Conceptual guides, including the Rive → NDI walkthrough. The `docs/demos/` subtree hosts minified control-panel builds for documentation hosting—refresh these alongside any frontend copy or schema changes.
 - `examples/`: Minimal end-to-end usage samples. Use these as starting points when demonstrating new capabilities.
 
 ### Ancillary Assets
-- `standalone/`: Sandbox applications and experiments. Reuse renderer/pipeline components instead of rebuilding them here.
+- `standalone/`: Sandbox applications and experiments. `standalone/rive_frontend/` contains the temporary browser control panel—keep it aligned with orchestrator semantics when updating UI copy, emitted JSON, or hotkey bindings.
 - `thirdparty/`: External dependencies (e.g., Rive SDK, pybind11). Confirm licence compatibility before introducing new vendored code.
 - `cmake/` and `CMakeLists.txt`: Build system entry points. Integrate new modules by extending the existing CMake structure rather than creating ad-hoc scripts.
 
@@ -138,9 +141,15 @@ Primary module headers (e.g., `yup_graphics.h`) must also include the declaratio
 - When touching test infrastructure, respect the skip markers and helper utilities in `python/tests/` to keep environments without the native extension passing.
 
 ## Current Priorities
-1. **Documentation & tooling:** Expand Windows-specific build instructions in `docs/` and automate wheel packaging and orchestration workflows via `tools/` or updated `just` recipes.
-2. **Integration testing:** Add or extend combined tests that exercise the renderer bindings feeding the NDI orchestrator (mocked senders acceptable in CI).
-3. **Performance validation:** Profile renderer → Python throughput to ensure zero-copy semantics on Windows hardware.
+1. **Control-panel alignment:** Keep the `standalone/rive_frontend/` UI, generated summary payloads, REST/OSC hooks, and orchestrator entry points in lockstep. Mirror UX wording changes in the minified `docs/demos/` builds and documentation.
+2. **Orchestration playbook:** Expand `docs/Rive to NDI Guide.md` with an end-to-end walkthrough that mirrors the latest Windows bootstrap script, including troubleshooting for NDI discovery and GPU readback stalls.
+3. **Integration testing:** Add or extend combined tests that exercise the renderer bindings feeding the NDI orchestrator (mocked senders acceptable in CI).
+4. **Performance validation:** Profile renderer → Python throughput to ensure zero-copy semantics on Windows hardware and document the benchmarks.
+
+## TODO List
+- [ ] Publish an updated control-panel payload schema example in `docs/rive_ndi_overview.md` and sync the same JSON snippet into `docs/demos/` release notes.
+- [ ] Refresh `tools/install_windows.ps1` to cover the new optional browser build step and validate the generated artifacts with `just smoke:ndi` on a clean Windows host.
+- [ ] Record a short troubleshooting appendix for common Windows GPU driver issues discovered during the latest offscreen renderer QA pass.
 
 # Packaging
 - Run `python tools/package_wheel.py` to produce a release-mode build and wheel.
