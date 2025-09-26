@@ -211,7 +211,19 @@ if (-not (Test-Path $pythonDir)) {
 Write-Section "Building Python wheel"
 Push-Location $pythonDir
 try {
-    & $venvPython -m build --wheel
+    $previousAudioSetting = $env:YUP_ENABLE_AUDIO_MODULES
+    $env:YUP_ENABLE_AUDIO_MODULES = '0'
+    try {
+        & $venvPython -m build --wheel
+    }
+    finally {
+        if ($null -eq $previousAudioSetting) {
+            Remove-Item Env:YUP_ENABLE_AUDIO_MODULES -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:YUP_ENABLE_AUDIO_MODULES = $previousAudioSetting
+        }
+    }
 
     $distDir = Join-Path $pythonDir 'dist'
     $wheel = Get-ChildItem -Path $distDir -Filter 'yup-*.whl' |
