@@ -137,8 +137,10 @@ pairs, connection throttling toggles, and optional REST/OSC servers:
 
 - `--rest-port` spins up a Flask server that exposes `/streams`, `/streams/<name>`,
   and `/streams/<name>/control` endpoints for remote automation.
-- `--osc-port` enables an OSC listener that accepts `/<namespace>/<stream>/control` messages and
-  reports metrics via `/<namespace>/<stream>/metrics`.
+- `--osc-port` enables an OSC listener (requires `python-osc>=1.8`) that accepts
+  `/<namespace>/<stream>/control` messages and responds to
+  `/<namespace>/<stream>/metrics` requests with a JSON payload describing frame
+  counters, connection counts, and pause state.
 - `--no-throttle` and `--pause-when-inactive` toggle the connection-aware behaviour described
   below.
 
