@@ -130,7 +130,7 @@ def test_metrics_requests_receive_json_response (monkeypatch: pytest.MonkeyPatch
 
     handler = metrics_handler["handler"]
     client_address = ("127.0.0.1", 5005)
-    handler(client_address, "/ndi/demo/metrics")
+    handler("/ndi/demo/metrics", client_address)
 
     cache_key = (client_address[0], client_address[1])
     assert cache_key in server._client_cache  # type: ignore[attr-defined]
@@ -148,9 +148,12 @@ def test_metrics_requests_receive_json_response (monkeypatch: pytest.MonkeyPatch
     }
 
     orchestrator.metrics.frames_sent = 8
-    handler(client_address, "/ndi/demo/metrics")
+    handler("/ndi/demo/metrics", client_address)
     assert len(server._client_cache) == 1  # type: ignore[arg-type]
     assert len(client.messages) == 2
+
+    handler("/ndi/demo/metrics", "ignored", client_address)
+    assert len(client.messages) == 3
 
     server.close()
     assert server._client_cache == {}  # type: ignore[attr-defined]
