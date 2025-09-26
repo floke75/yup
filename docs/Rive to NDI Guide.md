@@ -175,3 +175,18 @@ When modifying the renderer API, update the bindings and tests in the same commi
 - **Black frames or zero-sized memory views:** Confirm `advance()` is called with a positive delta and
   that the renderer reported a valid artboard/animation. Use `get_last_error()` for detailed GPU
   diagnostics.
+
+## 7. Prototype Control Panel for Rive Streams
+A lightweight browser UI lives under `standalone/rive_frontend/` to help artists and
+TDs experiment with `.riv` payloads before full orchestration wiring is in place.
+Open `index.html` in a local web server (for example, `python -m http.server` from
+the directory) to load animations, tune resolution/frame-rate targets, and draft
+NDI source metadata. The panel exposes a JSON summary block that mirrors the
+`NDIStreamConfig` structure, making it easy to copy/paste into automation scripts
+while the long-term control layer is still under construction.
+
+> [!TIP]
+> The front end is intentionally framework-agnostic. Extend the panels or replace
+the vanilla JavaScript controller when React/Vue/Svelte integration begins. The
+code is heavily commented to highlight the seams that the future control system
+can hook into without rewriting the whole UI.
