@@ -1,0 +1,124 @@
+<!--
+  ==============================================================================
+
+   This file is part of the YUP library.
+   Copyright (c) 2025 - kunitoki@gmail.com
+
+   YUP is an open source library subject to open-source licensing.
+
+   The code included in this file is provided under the terms of the ISC license
+   http://www.isc.org/downloads/software-support-policy/isc-license. Permission
+   to use, copy, modify, and/or distribute this software for any purpose with or
+   without fee is hereby granted provided that the above copyright notice and
+   this permission notice appear in all copies.
+
+   YUP IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+   EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+   DISCLAIMED.
+
+  ==============================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YUP Rive NDI Control Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://unpkg.com/@rive-app/canvas@2.17.0"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>YUP Rive → NDI Control Panel</h1>
+      <p class="subtitle">
+        Temporary front end for loading <code>.riv</code> files and preparing NDI stream settings.
+        Designed for rapid iteration and future integration.
+      </p>
+    </header>
+
+    <main class="app-layout">
+      <section class="panel" aria-labelledby="file-panel-title">
+        <div class="panel-header">
+          <h2 id="file-panel-title">Rive Asset</h2>
+          <p>Choose an animation and optional artboard for preview.</p>
+        </div>
+        <div class="panel-body">
+          <label class="field">
+            <span class="field-label">Rive file</span>
+            <input id="riveFileInput" type="file" accept=".riv" />
+          </label>
+          <div class="field-group" id="artboardGroup" hidden>
+            <label class="field">
+              <span class="field-label">Artboard</span>
+              <select id="artboardSelect"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">Animation / State Machine</span>
+              <select id="animationSelect"></select>
+            </label>
+          </div>
+          <div class="preview" aria-live="polite">
+            <canvas id="rivePreview" width="640" height="360"></canvas>
+            <p id="previewFallback" class="preview-fallback" hidden>
+              Select a <code>.riv</code> file to initialise the preview.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="stream-settings-title">
+        <div class="panel-header">
+          <h2 id="stream-settings-title">Stream Settings</h2>
+          <p>Tune output parameters that will be forwarded to the NDI pipeline.</p>
+        </div>
+        <div class="panel-body">
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Output width (px)</span>
+              <input id="widthInput" type="number" min="64" step="1" value="1920" />
+            </label>
+            <label class="field">
+              <span class="field-label">Output height (px)</span>
+              <input id="heightInput" type="number" min="64" step="1" value="1080" />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">Frame rate (fps)</span>
+            <input id="frameRateInput" type="number" min="1" step="0.01" value="60" />
+          </label>
+          <label class="field">
+            <span class="field-label">NDI source name</span>
+            <input id="ndiNameInput" type="text" maxlength="128" value="StudioA" />
+          </label>
+          <label class="field">
+            <span class="field-label">NDI group(s)</span>
+            <input id="ndiGroupInput" type="text" placeholder="Optional comma-separated list" />
+          </label>
+          <label class="field">
+            <span class="field-label">Notes</span>
+            <textarea id="notesInput" rows="3" placeholder="Document decisions or TODOs for this stream."></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="session-summary-title">
+        <div class="panel-header">
+          <h2 id="session-summary-title">Session Summary</h2>
+          <p>Review the configuration payload that will be forwarded downstream.</p>
+        </div>
+        <div class="panel-body">
+          <pre id="sessionSummary" class="summary" aria-live="polite"></pre>
+          <button id="copySummaryButton" type="button" class="primary-button">Copy summary JSON</button>
+          <p class="summary-hint">Use this payload to seed orchestrator APIs or save presets.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>
+        This UI is intentionally lightweight. Extend the panels or add routing logic as the orchestration layer evolves.
+      </p>
+    </footer>
+  </body>
+</html>
