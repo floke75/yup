@@ -36,11 +36,13 @@ frames as bytes or `memoryview` objects without copying when possible. Callers c
 reused.
 3. **Publish over NDI:** `yup_ndi.NDIOrchestrator` instantiates renderers, maps timestamps into the
 100 ns NDI domain, forwards frames to `cyndilib` senders, and applies metadata/control commands. The
-stream timeline now uses a fixed-point accumulator, avoiding per-frame `Fraction` arithmetic while
-keeping deterministic cadence for fractional frame rates. Use `set_stream_start_time()` (or the
-optional `start_time` argument on `add_stream()`) to prime the deterministic timestamp anchor so
-frames align to a consistent monotonic origin. The CLI frame pump wires this up automatically before
-emitting the first frame.
+sender adapter now routes asynchronous pipelines through `cyndilib.Sender.write_video_async()` when
+available so each frame is transferred exactly once, falling back to the synchronous
+`write_video()` call when async support is absent. The stream timeline now uses a fixed-point
+accumulator, avoiding per-frame `Fraction` arithmetic while keeping deterministic cadence for
+fractional frame rates. Use `set_stream_start_time()` (or the optional `start_time` argument on
+`add_stream()`) to prime the deterministic timestamp anchor so frames align to a consistent
+monotonic origin. The CLI frame pump wires this up automatically before emitting the first frame.
 
 The orchestrator also exposes a `renderer_options` dictionary so deployments can request deeper staging
 queues when buffering bursts or multiple consumers is preferable to the lowest possible latency.

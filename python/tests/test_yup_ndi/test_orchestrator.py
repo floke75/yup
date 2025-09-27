@@ -685,6 +685,10 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
         def write_video (self, buffer: memoryview) -> None:
             self.video_payloads.append(buffer)
 
+        def write_video_async (self, buffer: memoryview) -> None:
+            self.sent_async = True
+            self.video_payloads.append(buffer)
+
         def send_video_async (self) -> None:
             self.sent_async = True
 
