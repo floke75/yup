@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass
 from fractions import Fraction
 from types import SimpleNamespace
@@ -763,6 +765,54 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
 
     assert renderer.stopped is True
     assert sender.closed is True
+
+
+def test_cyndilib_sender_handle_falls_back_when_async_write_missing (caplog: pytest.LogCaptureFixture) -> None:
+    class StubVideoFrame:
+        def __init__ (self) -> None:
+            self.resolutions: list[tuple[int, int]] = []
+            self.strides: list[int] = []
+            self.ptr = SimpleNamespace(timestamp=None)
+
+        def set_resolution (self, width: int, height: int) -> None:
+            self.resolutions.append((width, height))
+
+        def _set_line_stride (self, stride: int) -> None:
+            self.strides.append(stride)
+
+    class StubSender:
+        def __init__ (self) -> None:
+            self.video_payloads: list[bytes] = []
+            self.sent_async = False
+            self.sent_sync = False
+
+        def write_video (self, buffer: memoryview) -> None:
+            self.video_payloads.append(bytes(buffer))
+
+        def send_video_async (self) -> None:
+            self.sent_async = True
+
+        def send_video (self) -> None:
+            self.sent_sync = True
+
+    sender = StubSender()
+    frame = StubVideoFrame()
+    handle = orchestrator_module._CyndiLibSenderHandle(sender, frame, use_async=True)
+
+    payload = memoryview(bytes(range(16)))
+
+    with caplog.at_level(logging.DEBUG):
+        handle.send(payload, width=2, height=2, stride=8, timestamp=42)
+
+    assert frame.resolutions[-1] == (2, 2)
+    assert frame.strides[-1] == 8
+    assert frame.ptr.timestamp == 42
+
+    assert sender.video_payloads == [bytes(payload)]
+    assert sender.sent_async is False
+    assert sender.sent_sync is False
+
+    assert "does not expose write_video_async" in caplog.text
 
 
 def test_fractional_frame_rate_produces_evenly_spaced_timestamps () -> None:
