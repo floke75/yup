@@ -36,12 +36,22 @@ The code was corrected to use the appropriate `cyndilib` function based on the `
 # Corrected code
 contiguous = buffer.cast("B")
 if self._use_async:
-    self._sender.write_video_async(contiguous)
+    write_video_async = getattr(self._sender, "write_video_async", None)
+    if callable(write_video_async):
+        write_video_async(contiguous)
+    else:
+        _logger.debug(
+            "cyndilib sender does not expose write_video_async; falling back to synchronous send"
+        )
+        self._sender.write_video(contiguous)
 else:
     self._sender.write_video(contiguous)
 ```
 
-This change has been made and is ready for submission.
+This change has been made and now gracefully falls back to the synchronous
+`write_video()` path when older `cyndilib` builds do not expose
+`write_video_async`, ensuring the frame is still transmitted without the
+duplicate send behaviour that triggered this investigation.
 
 ## 3. C++ Build System Analysis and Blockers
 
