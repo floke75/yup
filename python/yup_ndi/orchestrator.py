@@ -549,11 +549,14 @@ class _CyndiLibSenderHandle:
 
         contiguous = buffer.cast("B")
         if self._use_async:
-            if hasattr(self._sender, "write_video_async"):
-                self._sender.write_video_async(contiguous)
+            write_video_async = getattr(self._sender, "write_video_async", None)
+            if callable(write_video_async):
+                write_video_async(contiguous)
             else:
+                _logger.debug(
+                    "write_video_async not available on sender; falling back to synchronous write"
+                )
                 self._sender.write_video(contiguous)
-                self._sender.send_video_async()
         else:
             self._sender.write_video(contiguous)
 
