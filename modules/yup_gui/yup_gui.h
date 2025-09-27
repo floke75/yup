@@ -33,6 +33,9 @@
     license:              ISC
 
     dependencies:         yup_events yup_data_model yup_graphics rive
+    linuxLibs:            SDL2::SDL2
+    macLibs:              SDL2::SDL2
+    msftLibs:             SDL2::SDL2
     appleFrameworks:      Metal
     iosWeakFrameworks:    UniformTypeIdentifiers
     iosSimWeakFrameworks: UniformTypeIdentifiers
