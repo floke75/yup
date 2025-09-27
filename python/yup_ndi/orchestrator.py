@@ -549,13 +549,14 @@ class _CyndiLibSenderHandle:
 
         contiguous = buffer.cast("B")
         if self._use_async:
-            if hasattr(self._sender, "write_video_async"):
-                self._sender.write_video_async(contiguous)
-            else:
-                self._sender.write_video(contiguous)
-                self._sender.send_video_async()
-        else:
-            self._sender.write_video(contiguous)
+            write_async = getattr(self._sender, "write_video_async", None)
+            if callable(write_async):
+                write_async(contiguous)
+                return
+
+            _logger.debug("Sender missing write_video_async; falling back to synchronous send")
+
+        self._sender.write_video(contiguous)
 
     def apply_metadata (self, metadata: Mapping[str, Mapping[str, Any]]) -> None:
         if not metadata:
