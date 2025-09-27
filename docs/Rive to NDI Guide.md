@@ -109,6 +109,13 @@ interfaces above the orchestrator.
 > non-zero denominator—validation errors are raised eagerly so misconfigured streams fail fast.
 
 > [!IMPORTANT]
+> When `NDIStreamConfig.use_async_send` is left at its default of `True`, the orchestrator feeds frame
+> payloads to :meth:`cyndilib.Sender.write_video_async`. This keeps uploads non-blocking without the
+> redundant `write_video()` + `send_video_async()` combination that sent each frame twice. Older
+> `cyndilib` builds that lack `write_video_async` automatically fall back to the synchronous
+> `write_video()` path.
+
+> [!IMPORTANT]
 > When you configure a `frame_rate`, use `NDIOrchestrator.set_stream_start_time()` (or pass the
 > optional `start_time` keyword to `add_stream()`) to anchor the deterministic 100 ns timeline before
 > sending the first frame. This prevents drift when pumping fractional rates such as 30000/1001. The

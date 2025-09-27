@@ -670,6 +670,7 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
             self.video_frame: Optional[StubVideoFrame] = None
             self.open_called = False
             self.video_payloads: list[memoryview] = []
+            self.async_video_payloads: list[memoryview] = []
             self.sent_async = False
             self.sent_sync = False
             self.metadata: list[tuple[str, Mapping[str, Any]]] = []
@@ -684,6 +685,11 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
 
         def write_video (self, buffer: memoryview) -> None:
             self.video_payloads.append(buffer)
+
+        def write_video_async (self, buffer: memoryview) -> None:
+            self.video_payloads.append(buffer)
+            self.async_video_payloads.append(buffer)
+            self.sent_async = True
 
         def send_video_async (self) -> None:
             self.sent_async = True
@@ -748,6 +754,7 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     assert isinstance(payload, memoryview)
     assert bytes(payload) == bytes(range(16))
     assert sender.sent_async is True
+    assert sender.async_video_payloads == [payload]
     assert sender.sent_sync is False
 
     assert sender.metadata == [("ndi", {"title": "demo"})]
