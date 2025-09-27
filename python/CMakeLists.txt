@@ -78,6 +78,7 @@ yup_standalone_app (
     TARGET_APP_ID "org.yup.${target_name}"
     TARGET_APP_NAMESPACE "org.yup"
     TARGET_WHEEL ON
+    TARGET_CXX_STANDARD 20
     MODULES
         ${python_modules})
 
@@ -127,7 +128,7 @@ set (rive_renderer_target yup_rive_renderer)
 add_library (${rive_renderer_target} MODULE
     "${CMAKE_CURRENT_LIST_DIR}/src/yup_rive_renderer.cpp")
 
-target_compile_features (${rive_renderer_target} PRIVATE cxx_std_17)
+target_compile_features (${rive_renderer_target} PRIVATE cxx_std_20)
 
 target_compile_definitions (${rive_renderer_target}
     PRIVATE
