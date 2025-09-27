@@ -548,12 +548,8 @@ class _CyndiLibSenderHandle:
             _logger.debug("Unable to set NDI timestamp on video frame")
 
         contiguous = buffer.cast("B")
-        if self._use_async:
-            if hasattr(self._sender, "write_video_async"):
-                self._sender.write_video_async(contiguous)
-            else:
-                self._sender.write_video(contiguous)
-                self._sender.send_video_async()
+        if self._use_async and hasattr(self._sender, "write_video_async"):
+            self._sender.write_video_async(contiguous)
         else:
             self._sender.write_video(contiguous)
 

@@ -119,6 +119,10 @@ mirroring the direct Python API. Set it to a higher value when streams are consu
 when a few extra milliseconds of buffering keeps throughput stable. Invalid or missing entries fall
 back to the default of `1` and raise descriptive errors when misconfigured.
 
+`use_async_send` controls how frames are handed to :mod:`cyndilib`. When enabled (the default) the
+orchestrator now issues a single `write_video_async()` call per frame so the payload is queued exactly
+once. Disable it if you need synchronous behaviour—`write_video()` is used in that case.
+
 ### Command-line runner and control surfaces
 The package now ships with a convenience CLI so you can spin up a stream without writing a custom
 script. Invoke it with `python -m yup_ndi` and supply the renderer dimensions plus the `.riv` file:
