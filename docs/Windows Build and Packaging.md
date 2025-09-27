@@ -2,8 +2,8 @@
 
 This guide captures the end-to-end workflow for building the Direct3D11 Rive renderer,
 packaging the Python bindings, and validating the NDI orchestration path on Windows 11.
-The steps assume Visual Studio 2022, Python 3.11+, and the Windows 10 or 11 SDK are
-installed.
+The steps assume Visual Studio 2022 (or another C++20-compatible compiler), Python 3.11+,
+and the Windows 10 or 11 SDK are installed.
 
 ## 0. Automated bootstrap (optional)
 

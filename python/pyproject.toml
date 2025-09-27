@@ -25,7 +25,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.windows]
-environment = { "CMAKE_GENERATOR" = "Visual Studio 17 2022", "CMAKE_CXX_STANDARD" = "17" }
+environment = { "CMAKE_GENERATOR" = "Visual Studio 17 2022", "CMAKE_CXX_STANDARD" = "20" }
 
 [tool.cibuildwheel.linux]
 before-build = [

@@ -55,7 +55,7 @@ include:
   managed virtual environment.
 
 ### Prerequisites
-- Windows 10/11 with Visual Studio 2022 and the Windows SDK installed.
+- Windows 10/11 with Visual Studio 2022 (or another C++20-compatible compiler) and the Windows SDK installed.
 - Python 3.10+ with `pip`, `cmake`, and `ninja` available.
 - (Optional) [NDI Tools](https://ndi.video/tools/) or another NDI receiver for end-to-end testing.
 - (Optional) `cyndilib>=0.0.8` when you intend to publish live NDI streams.
