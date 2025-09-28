@@ -101,3 +101,7 @@ Despite these significant corrections, the build still fails with dependency-rel
 1.  **Submit the Python Fix**: The fix for the NDI double-sending bug is correct and provides a significant performance improvement. It is recommended to submit this change independently.
 2.  **Overhaul the CMake Module System**: The C++ build system requires a more thorough review and refactoring. The current approach of using header-based module declarations with custom parsing logic is brittle. A more standard CMake approach, where dependencies are explicitly and correctly linked using `target_link_libraries`, would be more robust and maintainable. This should be treated as a separate, high-priority technical debt task.
 3.  **Verify `pybind11` API Usage**: The `pybind11::memoryview` API calls in `yup_rive_renderer.cpp` are incorrect for the version of the library being used. Once the build system is stable, these calls need to be updated to match the correct API for the `pybind11` version included in the project.
+
+## 5. September 2025 Update
+
+-   Updated `_yup_module_setup_plugin_client` to pass the new availability flag through to `_yup_module_setup_target`. Without this explicit `1` the helper tripped CMake's arity checks, causing the `build_*` workflows to fail while configuring the CLAP, VST3, and standalone plugin clients introduced alongside the JPEG decoder support.
