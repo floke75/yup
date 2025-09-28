@@ -406,11 +406,37 @@ function (yup_add_module module_path modules_definitions module_group)
                     list (APPEND module_searchpaths ${JPEG_INCLUDE_DIR})
                 endif()
             else()
-                _yup_message (WARNING "System libjpeg not found; disabling JPEG decoding support.")
+                find_package (libjpeg-turbo CONFIG QUIET)
+
+                if (libjpeg-turbo_FOUND)
+                    set (module_available_define 1)
+
+                    set (_yup_libjpeg_turbo_candidates
+                        libjpeg-turbo::jpeg
+                        libjpeg-turbo::jpeg-static)
+                    foreach (candidate IN LISTS _yup_libjpeg_turbo_candidates)
+                        if (TARGET ${candidate})
+                            list (APPEND module_libs ${candidate})
+                            set (_yup_libjpeg_provider_target ${candidate})
+                            break()
+                        endif()
+                    endforeach()
+
+                    if (NOT _yup_libjpeg_provider_target)
+                        _yup_message (WARNING
+                            "libjpeg-turbo config package found but no usable CMake target was exported; disabling JPEG decoding support.")
+                        set (module_available_define 0)
+                    endif()
+                else()
+                    _yup_message (WARNING "System libjpeg not found; disabling JPEG decoding support.")
+                endif()
             endif()
         else()
             _yup_message (STATUS "Skipping libjpeg lookup on Emscripten; JPEG decoding disabled.")
         endif()
+
+        unset (_yup_libjpeg_provider_target)
+        unset (_yup_libjpeg_turbo_candidates)
     endif()
 
     _yup_resolve_variable_paths ("${module_searchpaths}" module_searchpaths)

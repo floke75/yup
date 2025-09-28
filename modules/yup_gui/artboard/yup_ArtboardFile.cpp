@@ -19,11 +19,8 @@
   ==============================================================================
 */
 
-#include "yup_gui.h"
+#include "yup_gui/yup_gui.h"
 
-#include "artboard/yup_ArtboardFile.h"
-
-#include "yup_core/containers/yup_MemoryBlock.h"
 
 #include "rive/assets/file_asset.hpp"
 #include "rive/file.hpp"
@@ -113,12 +110,13 @@ private:
             candidates.push_back (baseDirectory.getChildFile (uniqueFilename));
 
         const auto infoPath = info.uniquePath;
-        if (infoPath.getFullPathName().isNotEmpty())
+        const auto infoFullPath = infoPath.getFullPathName();
+        if (infoFullPath.isNotEmpty())
         {
-            if (infoPath.isAbsolutePath())
+            if (File::isAbsolutePath (infoFullPath))
                 candidates.push_back (infoPath);
             else
-                candidates.push_back (baseDirectory.getChildFile (infoPath.getFullPathName()));
+                candidates.push_back (baseDirectory.getChildFile (infoFullPath));
         }
 
         if (info.uniqueName.isNotEmpty() && info.extension.isNotEmpty())

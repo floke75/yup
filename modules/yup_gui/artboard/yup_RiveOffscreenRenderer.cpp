@@ -19,12 +19,9 @@
   ==============================================================================
 */
 
-#include "yup_gui.h"
+#include "yup_gui/yup_gui.h"
 
-#include "artboard/yup_RiveOffscreenRenderer.h"
-
-#include "artboard/yup_ArtboardFile.h"
-#include "yup_core/streams/yup_MemoryInputStream.h"
+#include "yup_RiveOffscreenRenderer.h"
 
 #include <algorithm>
 #include <array>

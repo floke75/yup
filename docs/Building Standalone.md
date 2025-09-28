@@ -134,7 +134,9 @@ endif()
 > consumes them outside of the graphics stack.
 >
 > On platforms where a system `libjpeg` development package is unavailable the build will continue, but JPEG decoding is
-> disabled. Install an appropriate `libjpeg` (or `libjpeg-turbo`) SDK before configuring to enable JPEG raster support.
+> disabled. Install an appropriate `libjpeg` (or `libjpeg-turbo`) SDK before configuring to enable JPEG raster support. The
+> build now also recognises `libjpeg-turbo`'s CMake config packages (such as the vcpkg port on Windows) so no additional
+> manual wiring is required once the SDK is installed.
 
 ## Application Resources
 

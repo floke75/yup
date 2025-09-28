@@ -27,6 +27,7 @@
 
 #define YUP_PYTHON_INCLUDE_PYBIND11_OPERATORS
 #define YUP_PYTHON_INCLUDE_PYBIND11_IOSTREAM
+#define YUP_PYTHON_INCLUDE_PYBIND11_NUMPY
 #include "../utilities/yup_PyBind11Includes.h"
 
 #if YUP_WINDOWS
@@ -414,7 +415,7 @@ void registerYupGuiBindings (py::module_& m)
         .def ("load_file",
               [] (RiveOffscreenRenderer& self, const std::string& path, const std::optional<std::string>& artboard)
               {
-                  File fileToLoad (String (path));
+                  File fileToLoad { String (path) };
                   const auto artboardName = artboard.has_value() ? String (*artboard) : String();
 
                   if (auto result = self.load (fileToLoad, artboardName); result.failed())
