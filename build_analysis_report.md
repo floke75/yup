@@ -1,107 +1,55 @@
-# Rive-to-NDI Pipeline and Build System Analysis Report
+# Rive-to-NDI Pipeline and Build System Status Report
 
-## 1. Executive Summary
+## 1. Current Status Overview
+- The Python orchestration layer now performs a single write per frame and gracefully falls back when asynchronous sending is unavail
+  able, eliminating the duplicate transmit bug that originally triggered this investigation.【F:python/yup_ndi/orchestrator.py†L522-
+  L567】
+- The `yup_rive_renderer` binding exposes frame buffers through `py::memoryview::from_buffer`, pairing explicit shape/stride data w
+  ith a lifetime-managed capsule so that Python receives a standards-compliant view of the renderer output.【F:python/src/yup_rive_r
+  enderer.cpp†L69-L131】
+- CMake still models every module as an `INTERFACE` library and injects sources, options, and dependencies through `_yup_module_se
+  tup_target`, so the original transitive-linking issues remain unresolved and are the primary blocker to reliable native builds.
+  【F:cmake/yup_modules.cmake†L172-L244】【F:cmake/yup_modules.cmake†L300-L360】
 
-The initial task was to analyze the alignment and implementation state of the Rive-to-NDI pipeline. This investigation uncovered a critical, performance-impacting bug in the Python orchestration layer. While fixing this bug, a series of deeper issues within the C++ native module's build system were discovered, which currently prevent the project from being built and tested.
+## 2. Completed Items
+### Python NDI Orchestrator
+- `_CyndiLibSenderHandle.send` caches `write_video_async`, uses it when present, and logs the synchronous fallback only once, removing
+  the redundant send path and reducing per-frame overhead.【F:python/yup_ndi/orchestrator.py†L522-L567】
 
-This report details both the Python-level fix and the extensive findings related to the C++ build system blockers.
+### Pybind11 Binding Hygiene
+- `makeFrameMemoryView` now returns either an empty sentinel view or a multi-dimensional BGRA view backed by a `std::shared_ptr` cap
+  sule, matching current `pybind11` expectations and avoiding the API misuse called out in the earlier audit.【F:python/src/yup_rive
+  _renderer.cpp†L69-L131】
 
-## 2. Python NDI Orchestrator Fix
+### CMake Helper Consistency
+- `_yup_module_setup_plugin_client` forwards the availability flag to `_yup_module_setup_target`, ensuring plugin client variants
+  inherit the same compile-time guards as their parent module—a regression that has already been corrected upstream.【F:cmake/yup_
+  modules.cmake†L248-L336】
 
-A significant "alignment" issue was identified in `python/yup_ndi/orchestrator.py` within the `_CyndiLibSenderHandle.send` method.
+## 3. Outstanding Build-System Risks
+1.  **Interface-only modules:** Every module is still declared as an `INTERFACE` target with its sources injected via `target_sour
+    ces(... INTERFACE ...)`. CMake treats these files as headers, so each consumer recompiles them and must manually propagate the
+    same dependency graph, recreating the include/link churn that blocked end-to-end builds during the original analysis.【F:cmake/
+    yup_modules.cmake†L172-L244】
+2.  **Manual dependency wiring:** Because dependencies are passed as raw generator expressions, any mismatch between module decla
+    rations and `_yup_module_setup_target` arguments results in missing `target_link_libraries` entries. This design still require
+    s auditing each module header to confirm its `dependencies` stanza matches the actual code usage.【F:cmake/yup_modules.cmake†L
+    172-L244】【F:cmake/yup_modules.cmake†L360-L416】
+3.  **Third-party discovery friction:** External libraries (e.g., SDL2, Rive SDK) rely on consumers to supply the correct include
+    roots via `target_include_directories(... INTERFACE ...)`, so the build continues to fail on clean machines until the module me
+    tadata is normalized or the CMake targets are converted to `STATIC`/`OBJECT` libraries with explicit linkage.【F:cmake/yup_modul
+    es.cmake†L172-L231】【F:cmake/yup_modules.cmake†L360-L416】
 
-### The Bug: Double Frame Sending
+## 4. Recommended Next Steps
+1.  Rework module targets as `OBJECT` or `STATIC` libraries so that compilation happens once per module and dependency linkage be
+    comes declarative. Prioritize `yup_gui`, `yup_python`, and `rive_decoders`, as they currently surface the majority of missing-
+    header failures when configuring sample builds.
+2.  Introduce regression tests (CI or `just` recipes) that configure and build the minimal Rive-to-NDI pipeline on a clean enviro
+    nment, catching missing package declarations as soon as a module header changes.
+3.  Extend the documentation in `docs/Rive to NDI Guide.md` with a troubleshooting appendix that maps common build errors back to
+    the module whose metadata triggered them once the module graph has been stabilised.
 
-The original implementation was sending every video frame to NDI twice:
-
-```python
-# Original incorrect code
-contiguous = buffer.cast("B")
-self._sender.write_video(contiguous) # First send (synchronous)
-if self._use_async:
-    self._sender.send_video_async() # Second send (asynchronous)
-else:
-    self._sender.send_video()
-```
-
-According to the `cyndilib` documentation, `write_video()` and `send_video_async()` are mutually exclusive operations for sending a frame. `write_video()` writes the data *and* sends it synchronously. `send_video_async()` is intended to be used after writing data to the frame buffer via a different mechanism. The most efficient method for asynchronous sending is a single call to `write_video_async(data)`.
-
-This bug caused unnecessary network traffic and CPU/GPU overhead.
-
-### The Fix
-
-The code was corrected to use the appropriate `cyndilib` function based on the `_use_async` flag, eliminating the redundant send:
-
-```python
-# Corrected code
-self._write_video_async: Optional[Callable[[memoryview], Any]] = None
-if self._use_async:
-    candidate = getattr(self._sender, "write_video_async", None)
-    if callable(candidate):
-        self._write_video_async = candidate
-
-contiguous = buffer.cast("B")
-if self._use_async and self._write_video_async is not None:
-    self._write_video_async(contiguous)
-    return
-
-if self._use_async and not self._missing_async_logged:
-    _logger.debug(
-        "cyndilib sender does not expose write_video_async; falling back to synchronous send"
-    )
-    self._missing_async_logged = True
-
-self._sender.write_video(contiguous)
-```
-
-This change has been made and now gracefully falls back to the synchronous
-`write_video()` path when older `cyndilib` builds do not expose
-`write_video_async`, ensuring the frame is still transmitted without the
-duplicate send behaviour that triggered this investigation. The
-consolidated solution caches the `write_video_async` lookup and only logs
-the fallback once, preventing repeated introspection work and debug-log
-spam when long-running streams rely on synchronous sending.
-
-## 3. C++ Build System Analysis and Blockers
-
-Verifying the Python fix was prevented by a cascade of C++ compilation errors. The following is a summary of the investigation and findings.
-
-### Initial Build Failures & Fixes
-
-1.  **Missing `alsa` dependency**: The initial build failed because the ALSA development libraries were not found. This was bypassed by setting the `YUP_ENABLE_AUDIO_MODULES=0` environment variable, as documented in `docs/Rive to NDI Guide.md`.
-2.  **Missing `curl` dependency**: The build then failed with `curl/curl.h: No such file or directory`. This was resolved by installing the `libcurl4-openssl-dev` system package.
-3.  **Redundant C++ Includes**: The build then failed with multiple redefinition errors. This was traced to `python/src/yup_rive_renderer.cpp` including core headers that were already part of a central include (`yup_PyBind11Includes.h`). Removing the redundant includes fixed this specific issue.
-
-### Root Cause: Flawed CMake Module System
-
-After fixing the initial issues, a deeper, more fundamental problem was uncovered in the project's CMake configuration (`cmake/yup_modules.cmake`).
-
-The core issue is that modules were defined as `INTERFACE` libraries, with their source files also declared as `INTERFACE`. This is an incorrect use of CMake's `INTERFACE` library feature. It caused any target linking a module to recompile all of that module's source files directly, but crucially, **without** inheriting the module's own dependencies.
-
-This led to a cascade of "header not found" errors, such as:
-*   `rive/rive_types.hpp: No such file or directory` in `rive_decoders`.
-*   `SDL2/SDL.h: No such file or directory` in `yup_gui`.
-*   `yup_core/containers/yup_MemoryBlock.h: No such file or directory` in `yup_gui`.
-*   `#error This binding file requires adding the yup_events module in the project` in `yup_python`.
-
-### Attempts to Fix the Build System
-
-Several attempts were made to correct the CMake build system:
-
-1.  **Changed `INTERFACE` to `STATIC`**: In `cmake/yup_modules.cmake`, all module library definitions were changed from `INTERFACE` to `STATIC`.
-2.  **Corrected Target Properties**: The properties for these new `STATIC` libraries were updated, making source files `PRIVATE` and all other properties (`PUBLIC`) to ensure correct dependency propagation.
-3.  **Fixed Missing Dependencies**: Explicit `dependencies` were added to the module headers for `rive_decoders` and `yup_python`.
-4.  **Corrected Include Paths**: Incorrect relative include paths in `yup_gui.cpp` and `yup_ArtboardFile.cpp` were fixed to be relative to the `modules` directory.
-5.  **Declared `SDL2` Dependency**: The `yup_gui` module header was updated to explicitly declare its dependency on `SDL2::SDL2` for all desktop platforms.
-
-Despite these significant corrections, the build still fails with dependency-related errors, indicating that the build system's issues are complex and deeply rooted.
-
-## 4. Recommendations
-
-1.  **Submit the Python Fix**: The fix for the NDI double-sending bug is correct and provides a significant performance improvement. It is recommended to submit this change independently.
-2.  **Overhaul the CMake Module System**: The C++ build system requires a more thorough review and refactoring. The current approach of using header-based module declarations with custom parsing logic is brittle. A more standard CMake approach, where dependencies are explicitly and correctly linked using `target_link_libraries`, would be more robust and maintainable. This should be treated as a separate, high-priority technical debt task.
-3.  **Verify `pybind11` API Usage**: The `pybind11::memoryview` API calls in `yup_rive_renderer.cpp` are incorrect for the version of the library being used. Once the build system is stable, these calls need to be updated to match the correct API for the `pybind11` version included in the project.
-
-## 5. September 2025 Update
-
--   Updated `_yup_module_setup_plugin_client` to pass the new availability flag through to `_yup_module_setup_target`. Without this explicit `1` the helper tripped CMake's arity checks, causing the `build_*` workflows to fail while configuring the CLAP, VST3, and standalone plugin clients introduced alongside the JPEG decoder support.
+## 5. Tracking Notes
+- ALSA remains optional; keep `YUP_ENABLE_AUDIO_MODULES=0` in Linux CI until audio-side dependencies are revisited.
+- Continue mirroring updates from `_yup_module_setup_target` into `_yup_module_setup_plugin_client` whenever new arguments are add
+  ed so plugin builds stay aligned.
