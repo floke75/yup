@@ -527,6 +527,12 @@ class _CyndiLibSenderHandle:
         self._video_frame = video_frame
         self._use_async = use_async
         self._last_connection_count = -1
+        self._write_video_async: Optional[Callable[[memoryview], Any]] = None
+        self._missing_async_logged = False
+        if self._use_async:
+            candidate = getattr(self._sender, "write_video_async", None)
+            if callable(candidate):
+                self._write_video_async = candidate
 
     def send (self, buffer: memoryview, width: int, height: int, stride: int, timestamp: int) -> None:
         try:
@@ -548,17 +554,17 @@ class _CyndiLibSenderHandle:
             _logger.debug("Unable to set NDI timestamp on video frame")
 
         contiguous = buffer.cast("B")
-        if self._use_async:
-            write_video_async = getattr(self._sender, "write_video_async", None)
-            if callable(write_video_async):
-                write_video_async(contiguous)
-            else:
-                _logger.debug(
-                    "cyndilib sender does not expose write_video_async; falling back to synchronous send"
-                )
-                self._sender.write_video(contiguous)
-        else:
-            self._sender.write_video(contiguous)
+        if self._use_async and self._write_video_async is not None:
+            self._write_video_async(contiguous)
+            return
+
+        if self._use_async and not self._missing_async_logged:
+            _logger.debug(
+                "cyndilib sender does not expose write_video_async; falling back to synchronous send"
+            )
+            self._missing_async_logged = True
+
+        self._sender.write_video(contiguous)
 
     def apply_metadata (self, metadata: Mapping[str, Mapping[str, Any]]) -> None:
         if not metadata:
