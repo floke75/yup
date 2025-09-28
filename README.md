@@ -20,6 +20,12 @@ switching, and metadata updates.
 - **Tested workflow:** GoogleTest and `pytest` suites validate renderer semantics, binding behaviour,
 and orchestrator integration without requiring native NDI libraries during development.
 
+### Continuous Integration
+Only the Windows GitHub Actions workflow runs automatically on this branch. Linux, macOS, Android,
+iOS, and wasm workflows remain in the repository for historical reference but have been converted to
+manual `workflow_dispatch` jobs so that non-Windows runs do not generate noise during Windows-focused
+development. Trigger them manually from the Actions tab if you need to verify a legacy configuration.
+
 ## Repository Layout
 | Path | Description |
 | ---- | ----------- |

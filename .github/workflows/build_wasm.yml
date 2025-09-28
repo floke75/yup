@@ -1,25 +1,9 @@
 name: Wasm
 
+# NOTE: Windows is the only supported CI target on this branch.
+# Non-Windows workflows are retained for historical reference and disabled by default.
 on:
-  push:
-    paths:
-      - "CMakeLists.txt"
-      - "**/workflows/build_wasm.yml"
-      - "**/cmake/**"
-      - "**/examples/**"
-      - "**/modules/**"
-      - "**/tests/**"
-      - "**/thirdparty/**"
-      - "!**/native/generated/**"
-      - "!**/native/java*/**"
-      - "!**/native/*_android.*"
-      - "!**/native/*_apple.*"
-      - "!**/native/*_linux.*"
-      - "!**/native/*_ios.*"
-      - "!**/native/*_mac.*"
-      - "!**/native/*_windows.*"
-    branches:
-      - "**"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

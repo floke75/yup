@@ -1,24 +1,9 @@
 name: iOS
 
+# NOTE: Windows is the only supported CI target on this branch.
+# Non-Windows workflows are retained for historical reference and disabled by default.
 on:
-  push:
-    paths:
-      - "CMakeLists.txt"
-      - "**/workflows/build_ios.yml"
-      - "**/cmake/**"
-      - "**/modules/**"
-      - "**/tests/**"
-      - "**/thirdparty/**"
-      - "!**/native/generated/**"
-      - "!**/native/java*/**"
-      - "!**/native/*_android.*"
-      - "!**/native/*_emscripten.*"
-      - "!**/native/*_linux.*"
-      - "!**/native/*_mac.*"
-      - "!**/native/*_wasm.*"
-      - "!**/native/*_windows.*"
-    branches:
-      - "**"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
