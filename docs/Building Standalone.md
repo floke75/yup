@@ -1,6 +1,10 @@
 # Building Standalone Applications with YUP
 
-This guide explains how to create standalone applications using the YUP framework. YUP provides a robust foundation for building cross-platform desktop applications with modern UI capabilities.
+This guide explains how to create standalone applications using the YUP framework on Windows. It is scoped to the Windows-only Direct3D/NDI pipeline that the project actively maintains; any cross-platform remarks that remain are preserved strictly as legacy context.
+
+### Legacy platforms
+
+If you need historical notes for non-Windows targets, consult the repository history or earlier revisions of this document. New contributions should focus exclusively on the Windows toolchain and must not pursue feature parity on other platforms.
 
 ## Basic Application Structure
 
@@ -81,7 +85,7 @@ private:
 START_YUP_APPLICATION (MyApplication)
 ```
 
-## Building with CMake
+## Building with CMake (Windows)
 
 Create a `CMakeLists.txt` file for your application:
 
@@ -122,6 +126,8 @@ source_group (TREE ${CMAKE_CURRENT_LIST_DIR}/ FILES ${sources})
 target_sources (${target_name} PRIVATE ${sources})
 
 # Add resources if needed
+# The Android guard below is legacy scaffolding retained for historical reference.
+# Windows builds will include resources as shown here.
 if (NOT YUP_TARGET_ANDROID)
     file (GLOB resources "${CMAKE_CURRENT_LIST_DIR}/resources/*")
     source_group (TREE ${CMAKE_CURRENT_LIST_DIR}/resources/ FILES ${resources})
@@ -133,10 +139,7 @@ endif()
 > the `rive_decoders` module that `yup_graphics` depends on. You only need to add those modules explicitly if your application
 > consumes them outside of the graphics stack.
 >
-> On platforms where a system `libjpeg` development package is unavailable the build will continue, but JPEG decoding is
-> disabled. Install an appropriate `libjpeg` (or `libjpeg-turbo`) SDK before configuring to enable JPEG raster support. The
-> build now also recognises `libjpeg-turbo`'s CMake config packages (such as the vcpkg port on Windows) so no additional
-> manual wiring is required once the SDK is installed.
+> On Windows the recommended path is to install the `libjpeg-turbo` SDK (for example via vcpkg) before configuring so JPEG raster support remains enabled. References to non-Windows package managers in older revisions should be treated as legacy guidance.
 
 ## Application Resources
 
@@ -199,9 +202,9 @@ if (! dataDir.exists())
    - Clean up resources in destructors
 
 3. **UI Design**
-   - Follow platform-specific UI guidelines
-   - Implement responsive layouts
-   - Handle different DPI settings
+   - Follow Windows UI guidance for window chrome, accessibility, and input behaviour
+   - Implement responsive layouts that respect Windows scaling factors
+   - Handle different DPI settings across high-DPI Windows displays
 
 4. **Performance**
    - Minimize allocations in UI thread
@@ -209,10 +212,10 @@ if (! dataDir.exists())
    - Profile your application
 
 5. **Testing**
-   - Test on all target platforms
-   - Verify window management
+   - Test on supported Windows 11 configurations
+   - Verify window management (min/max/restore) with Direct3D surfaces
    - Check resource cleanup
-   - Test different screen resolutions
+   - Test different Windows display scale factors and multi-monitor layouts
 
 ## Common Issues and Solutions
 
@@ -226,13 +229,13 @@ if (! dataDir.exists())
    - Verify resource paths
    - Handle missing resources gracefully
 
-3. **Platform-Specific Issues**
-   - Handle platform-specific menu systems
-   - Manage platform-specific window decorations
-   - Handle platform-specific file system operations
+3. **Windows-Specific Issues**
+   - Integrate with the Windows menu system and shell behaviour
+   - Manage window decorations across Win32 and UWP packaging targets if applicable
+   - Use Windows file system conventions (wide-character paths, known folders APIs)
 
 ## Additional Resources
 
 - [YUP Documentation](https://yup.github.io/docs)
 - [YUP Examples](https://github.com/kunitoki/yup/tree/main/examples)
-- [Platform-Specific Guidelines](https://yup.github.io/docs/platforms)
+- [Platform-Specific Guidelines](https://yup.github.io/docs/platforms) *(legacy cross-platform reference; consult only if you are researching historical behaviour)*
