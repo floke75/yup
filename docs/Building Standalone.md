@@ -114,10 +114,7 @@ yup_standalone_app (
     INITIAL_MEMORY 268435456  # 256MB initial memory
     MODULES
         yup_audio_devices
-        yup_gui
-        libpng
-        libwebp
-        libjpeg)
+        yup_gui)
 
 # Add source files
 file (GLOB sources "${CMAKE_CURRENT_LIST_DIR}/*.cpp")
@@ -131,6 +128,15 @@ if (NOT YUP_TARGET_ANDROID)
     target_sources (${target_name} PRIVATE ${resources})
 endif()
 ```
+
+> **Note:** The raster image back-ends (`libpng`, `libwebp`, and `libjpeg` when available) are now pulled in automatically via
+> the `rive_decoders` module that `yup_graphics` depends on. You only need to add those modules explicitly if your application
+> consumes them outside of the graphics stack.
+>
+> On platforms where a system `libjpeg` development package is unavailable the build will continue, but JPEG decoding is
+> disabled. Install an appropriate `libjpeg` (or `libjpeg-turbo`) SDK before configuring to enable JPEG raster support. The
+> build now also recognises `libjpeg-turbo`'s CMake config packages (such as the vcpkg port on Windows) so no additional
+> manual wiring is required once the SDK is installed.
 
 ## Application Resources
 
@@ -159,9 +165,6 @@ yup_standalone_app (
     MODULES
         yup_audio_devices
         yup_gui
-        libpng
-        libwebp
-        libjpeg
         ${target_name}_binary_data) # << add this
 ```
 

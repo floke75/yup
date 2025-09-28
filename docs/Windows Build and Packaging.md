@@ -39,6 +39,14 @@ tests. Use `-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or
    python -m pip install cyndilib==0.0.8
    ```
 
+4. Install the JPEG raster dependency if you plan to decode `.jpeg` assets. The build now
+   consumes `libjpeg-turbo`'s CMake config automatically, so installing the vcpkg port is
+   sufficient:
+
+   ```powershell
+   vcpkg install libjpeg-turbo:x64-windows
+   ```
+
 ## 2. Configure and build the native renderer
 
 1. Configure the project with Visual Studio 2022 generators. Disable the legacy audio
