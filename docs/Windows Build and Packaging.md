@@ -66,6 +66,13 @@ tests. Use `-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or
      -DYUP_BUILD_EXAMPLES=OFF
    ```
 
+   > [!NOTE]
+   > The module graph now builds as actual **static libraries** when sources are present.
+   > CMake performs the compilation once per module and wires dependencies through
+   > `target_link_libraries`, so Windows configurations no longer need to re-list every
+   > third-party include directory or define when adding new consumers of `yup_gui`,
+   > `yup_python`, or the Rive decoders.
+
 2. Build the desired configuration:
 
    ```powershell

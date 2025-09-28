@@ -62,6 +62,12 @@ Compile the solution in **Release** mode, including the renderer library, pybind
 cmake --build build\msvc-release --config Release
 ```
 
+> [!NOTE]
+> Modules that include C++ implementation files are now produced as static libraries during
+> this step. Dependencies (Rive, HarfBuzz, libpng, etc.) are automatically linked through the
+> module metadata, so consumers no longer have to repeat include directories or compile
+> definitions when targeting `yup_gui` or the renderer bindings.
+
 The command produces:
 - `yup_rive_renderer.pyd` – the Python extension module.
 - All static and dynamic libraries for the renderer core.
