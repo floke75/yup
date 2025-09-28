@@ -68,24 +68,33 @@ endfunction()
 #==============================================================================
 
 function (_yup_module_collect_sources folder output_variable)
+    if (folder MATCHES ".*/libpng")
+        file(GLOB module_sources
+            "${folder}/upstream/png.c"
+            "${folder}/upstream/pngerror.c"
+            "${folder}/upstream/pngget.c"
+            "${folder}/upstream/pngmem.c"
+            "${folder}/upstream/pngpread.c"
+            "${folder}/upstream/pngread.c"
+            "${folder}/upstream/pngrio.c"
+            "${folder}/upstream/pngrtran.c"
+            "${folder}/upstream/pngrutil.c"
+            "${folder}/upstream/pngset.c"
+            "${folder}/upstream/pngtrans.c"
+            "${folder}/upstream/pngwio.c"
+            "${folder}/upstream/pngwrite.c"
+            "${folder}/upstream/pngwtran.c"
+            "${folder}/upstream/pngwutil.c"
+            "${folder}/libpng.c"
+        )
+        set(${output_variable} "${module_sources}" PARENT_SCOPE)
+        return()
+    endif()
+
     file(GLOB_RECURSE all_module_sources
-        EXCLUDE_DIRECTORIES
-        "${folder}/arm"
-        "${folder}/mips"
-        "${folder}/powerpc"
-        "${folder}/contrib"
-        "${folder}/intel"
-        "${folder}/docs"
-        "${folder}/examples"
-        "${folder}/scripts"
-        "${folder}/tests"
-        "${folder}/test"
-        "${folder}/build"
-        "${folder}/projects"
         "${folder}/*.cpp"
         "${folder}/*.c"
     )
-
     if(APPLE)
         file(GLOB_RECURSE apple_sources
             "${folder}/*.mm"
