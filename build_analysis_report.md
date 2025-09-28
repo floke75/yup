@@ -34,24 +34,33 @@ The code was corrected to use the appropriate `cyndilib` function based on the `
 
 ```python
 # Corrected code
-contiguous = buffer.cast("B")
+self._write_video_async: Optional[Callable[[memoryview], Any]] = None
 if self._use_async:
-    write_video_async = getattr(self._sender, "write_video_async", None)
-    if callable(write_video_async):
-        write_video_async(contiguous)
-    else:
-        _logger.debug(
-            "cyndilib sender does not expose write_video_async; falling back to synchronous send"
-        )
-        self._sender.write_video(contiguous)
-else:
-    self._sender.write_video(contiguous)
+    candidate = getattr(self._sender, "write_video_async", None)
+    if callable(candidate):
+        self._write_video_async = candidate
+
+contiguous = buffer.cast("B")
+if self._use_async and self._write_video_async is not None:
+    self._write_video_async(contiguous)
+    return
+
+if self._use_async and not self._missing_async_logged:
+    _logger.debug(
+        "cyndilib sender does not expose write_video_async; falling back to synchronous send"
+    )
+    self._missing_async_logged = True
+
+self._sender.write_video(contiguous)
 ```
 
 This change has been made and now gracefully falls back to the synchronous
 `write_video()` path when older `cyndilib` builds do not expose
 `write_video_async`, ensuring the frame is still transmitted without the
-duplicate send behaviour that triggered this investigation.
+duplicate send behaviour that triggered this investigation. The
+consolidated solution caches the `write_video_async` lookup and only logs
+the fallback once, preventing repeated introspection work and debug-log
+spam when long-running streams rely on synchronous sending.
 
 ## 3. C++ Build System Analysis and Blockers
 
