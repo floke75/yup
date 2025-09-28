@@ -1,27 +1,9 @@
 name: Linux
 
+# NOTE: Windows is the only supported CI target on this branch.
+# Non-Windows workflows are retained for historical reference and disabled by default.
 on:
-  push:
-    paths:
-      - "CMakeLists.txt"
-      - "**/workflows/build_linux.yml"
-      - "**/cmake/**"
-      - "**/examples/**"
-      - "**/modules/**"
-      - "**/python/**"
-      - "**/tests/**"
-      - "**/thirdparty/**"
-      - "!**/native/generated/**"
-      - "!**/native/java*/**"
-      - "!**/native/*_android.*"
-      - "!**/native/*_apple.*"
-      - "!**/native/*_emscripten.*"
-      - "!**/native/*_ios.*"
-      - "!**/native/*_mac.*"
-      - "!**/native/*_wasm.*"
-      - "!**/native/*_windows.*"
-    branches:
-      - "**"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

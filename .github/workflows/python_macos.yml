@@ -1,24 +1,9 @@
 name: MacOS Python
 
+# NOTE: Windows is the only supported CI target on this branch.
+# Non-Windows workflows are retained for historical reference and disabled by default.
 on:
-  push:
-    paths:
-      - "CMakeLists.txt"
-      - "**/workflows/python_macos.yml"
-      - "**/cmake/**"
-      - "**/modules/**"
-      - "**/thirdparty/**"
-      - "**/python/**"
-      - "!**/native/generated/**"
-      - "!**/native/java*/**"
-      - "!**/native/*_android.*"
-      - "!**/native/*_emscripten.*"
-      - "!**/native/*_linux.*"
-      - "!**/native/*_ios.*"
-      - "!**/native/*_wasm.*"
-      - "!**/native/*_windows.*"
-    branches:
-      - "**"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
