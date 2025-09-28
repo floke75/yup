@@ -65,9 +65,11 @@ frame = renderer.acquire_frame_view()  # zero-copy BGRA memoryview
 the value (for example, when feeding multiple consumers) to smooth out bursts at the cost of a few
 frames of additional latency. Leave it at the default of `1` when you need lowest-latency updates.
 
-`acquire_frame_view()` returns a read-only `memoryview` that can be cast to a flat byte buffer or into
-`(height, width, 4)` NumPy arrays. `get_frame_bytes()` remains available when a defensive copy is
-needed.
+`acquire_frame_view()` returns a read-only `memoryview` that advertises a `"B"` (unsigned byte)
+format.  This allows `memoryview.cast("B")` and NumPy consumers to recognise the buffer as
+packed BGRA data and preserves zero-copy behaviour when moving between Python versions.  The
+view can be cast to a flat byte buffer or reshaped into `(height, width, 4)` arrays as needed.
+`get_frame_bytes()` remains available when a defensive copy is required.
 
 ## 4. Publish Frames Over NDI
 The `yup_ndi` package orchestrates renderers and senders. It accepts factories for dependency

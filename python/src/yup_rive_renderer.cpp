@@ -77,6 +77,7 @@ namespace
             return py::memoryview::from_buffer (
                 &dummy,
                 sizeof (uint8),
+                "B",
                 std::vector<py::ssize_t> { 0 },
                 std::vector<py::ssize_t> { 1 },
                 true);
@@ -97,6 +98,7 @@ namespace
         return py::memoryview::from_buffer (
             data,
             sizeof (uint8),
+            "B",
             std::vector<py::ssize_t> { height, width, 4 },
             std::vector<py::ssize_t> { stride, 4, 1 },
             true,
