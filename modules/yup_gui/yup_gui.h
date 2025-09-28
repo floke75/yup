@@ -32,7 +32,7 @@
     website:              https://github.com/kunitoki/yup
     license:              ISC
 
-    dependencies:         yup_events yup_data_model yup_graphics rive
+    dependencies:         yup_core yup_events yup_data_model yup_graphics rive
     appleFrameworks:      Metal
     iosWeakFrameworks:    UniformTypeIdentifiers
     iosSimWeakFrameworks: UniformTypeIdentifiers

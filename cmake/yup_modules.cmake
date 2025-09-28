@@ -68,88 +68,35 @@ endfunction()
 #==============================================================================
 
 function (_yup_module_collect_sources folder output_variable)
-    set(source_extensions ".c;.cc;.cxx;.cpp;.h;.hh;.hxx;.hpp")
-    if (APPLE)
-        list (APPEND source_extensions ".m" ".mm")
+    file(GLOB_RECURSE all_module_sources
+        EXCLUDE_DIRECTORIES
+        "${folder}/arm"
+        "${folder}/mips"
+        "${folder}/powerpc"
+        "${folder}/contrib"
+        "${folder}/intel"
+        "${folder}/docs"
+        "${folder}/examples"
+        "${folder}/scripts"
+        "${folder}/tests"
+        "${folder}/test"
+        "${folder}/build"
+        "${folder}/projects"
+        "${folder}/*.cpp"
+        "${folder}/*.c"
+    )
+
+    if(APPLE)
+        file(GLOB_RECURSE apple_sources
+            "${folder}/*.mm"
+            "${folder}/*.m"
+        )
+        list(APPEND all_module_sources ${apple_sources})
     endif()
 
-    set (base_path "${folder}/${module_name}")
-    set (all_module_sources "")
-
-    foreach (extension IN LISTS source_extensions)
-        file (GLOB found_source_files "${base_path}*${extension}")
-
-        if (NOT YUP_PLATFORM_MSFT)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_microsoft${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_WINDOWS)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_windows${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_UWP)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_uwp${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_APPLE)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_apple${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_IOS)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_ios${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_MAC)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_mac${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_LINUX)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_linux${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_MOBILE)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_mobile${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_ANDROID)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_android${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_EMSCRIPTEN)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_emscripten${extension}")
-        endif()
-
-        if (NOT YUP_PLATFORM_POSIX)
-            list (FILTER found_source_files EXCLUDE REGEX "${base_path}*_posix${extension}")
-        endif()
-
-        list (APPEND all_module_sources ${found_source_files})
-    endforeach()
-
-    set (module_sources "")
-    foreach (module_source IN LISTS all_module_sources)
-        if (APPLE)
-            if (module_source MATCHES "^.*\.(cc|cxx|cpp)$")
-                get_filename_component (source_directory ${module_source} DIRECTORY)
-                get_filename_component (source_file ${module_source} NAME_WLE)
-                set (imported_module_source "${source_directory}/${source_file}.mm")
-                if (${imported_module_source} IN_LIST all_module_sources)
-                    continue()
-                endif()
-            elseif (module_source MATCHES "^.*\.c$")
-                get_filename_component (source_directory ${module_source} DIRECTORY)
-                get_filename_component (source_file ${module_source} NAME_WLE)
-                set (imported_module_source "${source_directory}/${source_file}.m")
-                if (${imported_module_source} IN_LIST all_module_sources)
-                    continue()
-                endif()
-            endif()
-        endif()
-        list (APPEND module_sources ${module_source})
-    endforeach()
-
-    set (${output_variable} "${module_sources}" PARENT_SCOPE)
+    set (${output_variable} "${all_module_sources}" PARENT_SCOPE)
 endfunction()
+
 
 #==============================================================================
 
@@ -187,18 +134,21 @@ function (_yup_module_setup_target module_name
         list (APPEND module_options /bigobj)
     endif()
 
-    target_sources (${module_name} INTERFACE ${module_sources})
+    if (module_sources)
+        target_sources (${module_name} PRIVATE ${module_sources})
+    endif()
 
     if (module_cpp_standard)
-        target_compile_features (${module_name} INTERFACE cxx_std_${module_cpp_standard})
+        target_compile_features (${module_name} PUBLIC cxx_std_${module_cpp_standard})
     else()
-        target_compile_features (${module_name} INTERFACE cxx_std_17)
+        target_compile_features (${module_name} PUBLIC cxx_std_17)
     endif()
 
     set_target_properties (${module_name} PROPERTIES
         CXX_EXTENSIONS OFF
         CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON)
+        VISIBILITY_INLINES_HIDDEN ON
+        POSITION_INDEPENDENT_CODE ON)
 
     if (YUP_PLATFORM_APPLE)
         set_target_properties (${module_name} PROPERTIES
@@ -206,27 +156,27 @@ function (_yup_module_setup_target module_name
             XCODE_GENERATE_SCHEME OFF)
     endif()
 
-    target_compile_options (${module_name} INTERFACE
+    target_compile_options (${module_name} PUBLIC
         ${module_options})
 
-    target_compile_definitions (${module_name} INTERFACE
+    target_compile_definitions (${module_name} PUBLIC
         $<IF:$<CONFIG:Debug>,DEBUG=1,NDEBUG=1>
         YUP_MODULE_AVAILABLE_${module_name}=1
         YUP_GLOBAL_MODULE_SETTINGS_INCLUDED=1
         ${module_defines})
 
-    target_include_directories (${module_name} INTERFACE
+    target_include_directories (${module_name} PUBLIC
         ${module_include_paths})
 
-    target_link_directories (${module_name} INTERFACE
+    target_link_directories (${module_name} PUBLIC
         ${module_libs_paths})
 
-    target_link_libraries (${module_name} INTERFACE
+    target_link_libraries (${module_name} PUBLIC
         ${module_libs}
         ${module_frameworks}
         ${module_dependencies})
 
-    target_link_options (${module_name} INTERFACE
+    target_link_options (${module_name} PUBLIC
         ${module_link_options})
 
     # Add coverage support if enabled
@@ -261,7 +211,7 @@ function (_yup_module_setup_plugin_client target_name plugin_client_target folde
         _yup_message (FATAL_ERROR "Invalid plugin type: ${plugin_type}. Must be either 'vst3', 'clap' or 'standalone'")
     endif()
 
-    add_library (${custom_target_name} INTERFACE)
+    add_library (${custom_target_name} STATIC)
     set_target_properties (${custom_target_name} PROPERTIES FOLDER "${folder_name}")
 
     get_target_property (module_path ${plugin_client_target} YUP_MODULE_PATH)
@@ -333,6 +283,20 @@ function (yup_add_module module_path modules_definitions module_group)
     _yup_message (STATUS "Processing module " ${module_name} " at " ${module_path})
     set (${module_name}_Found OFF PARENT_SCOPE)
 
+    if (TARGET ${module_name})
+        get_target_property (existing_module_path ${module_name} YUP_MODULE_PATH)
+        if (NOT existing_module_path)
+            set (existing_module_path "<unknown>")
+        endif()
+        if (NOT existing_module_path STREQUAL "${module_path}")
+            _yup_message (STATUS "Module ${module_name} already registered from ${existing_module_path}, skipping duplicate declaration from ${module_path}")
+        else()
+            _yup_message (STATUS "Module ${module_name} already registered, skipping duplicate declaration")
+        endif()
+        set (${module_name}_Found ON PARENT_SCOPE)
+        return()
+    endif()
+
     if (NOT EXISTS ${module_path})
         _yup_message (FATAL_ERROR "Module location ${module_path} not found")
     endif()
@@ -343,7 +307,7 @@ function (yup_add_module module_path modules_definitions module_group)
     endif()
 
     # ==== Add module as library
-    add_library (${module_name} INTERFACE)
+    add_library (${module_name} STATIC)
     set_target_properties (${module_name} PROPERTIES FOLDER "${module_group}")
 
     # ==== Parse module declaration string
@@ -518,9 +482,14 @@ function (yup_add_module module_path modules_definitions module_group)
         list (APPEND module_defines ${module_definition})
     endforeach()
 
+    if (module_name STREQUAL "libpng")
+        target_include_directories(libpng PUBLIC ${CMAKE_SOURCE_DIR}/thirdparty/zlib)
+    endif()
+
     # ==== Prepare include paths
     get_filename_component (module_include_path ${module_path} DIRECTORY)
     list (APPEND module_include_paths "${module_include_path}")
+    list (APPEND module_include_paths "${module_path}")
 
     foreach (searchpath IN LISTS module_searchpaths)
         if (EXISTS "${searchpath}")
@@ -643,24 +612,36 @@ macro (yup_add_default_modules modules_path)
     # ==== Yup modules
     set (modules_group "Modules")
     yup_add_module (${modules_path}/modules/yup_core "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_core ALIAS yup_core)
+    if (NOT TARGET yup::yup_core)
+        add_library (yup::yup_core ALIAS yup_core)
+    endif()
 
     yup_add_module (${modules_path}/modules/yup_events "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_events ALIAS yup_events)
+    if (NOT TARGET yup::yup_events)
+        add_library (yup::yup_events ALIAS yup_events)
+    endif()
 
     yup_add_module (${modules_path}/modules/yup_data_model "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_data_model ALIAS yup_data_model)
+    if (NOT TARGET yup::yup_data_model)
+        add_library (yup::yup_data_model ALIAS yup_data_model)
+    endif()
 
     if (YUP_ARG_ENABLE_AUDIO)
         yup_add_module (${modules_path}/modules/yup_dsp "${modules_definitions}" ${modules_group})
-        add_library (yup::yup_dsp ALIAS yup_dsp)
+        if (NOT TARGET yup::yup_dsp)
+            add_library (yup::yup_dsp ALIAS yup_dsp)
+        endif()
     endif()
 
     yup_add_module (${modules_path}/modules/yup_graphics "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_graphics ALIAS yup_graphics)
+    if (NOT TARGET yup::yup_graphics)
+        add_library (yup::yup_graphics ALIAS yup_graphics)
+    endif()
 
     yup_add_module (${modules_path}/modules/yup_gui "${modules_definitions}" ${modules_group})
-    add_library (yup::yup_gui ALIAS yup_gui)
+    if (NOT TARGET yup::yup_gui)
+        add_library (yup::yup_gui ALIAS yup_gui)
+    endif()
 
     if (YUP_ARG_ENABLE_AUDIO)
         set (audio_modules
@@ -672,7 +653,9 @@ macro (yup_add_default_modules modules_path)
             yup_audio_plugin_client)
         foreach (audio_module IN LISTS audio_modules)
             yup_add_module (${modules_path}/modules/${audio_module} "${modules_definitions}" ${modules_group})
-            add_library (yup::${audio_module} ALIAS ${audio_module})
+            if (NOT TARGET yup::${audio_module})
+                add_library (yup::${audio_module} ALIAS ${audio_module})
+            endif()
         endforeach()
     endif()
 
@@ -693,6 +676,8 @@ macro (yup_add_default_modules modules_path)
         _yup_message (STATUS "* Python_ROOT_DIR: ${Python_ROOT_DIR}")
 
         yup_add_module (${modules_path}/modules/yup_python "${modules_definitions}" ${modules_group})
-        add_library (yup::yup_python ALIAS yup_python)
+        if (NOT TARGET yup::yup_python)
+            add_library (yup::yup_python ALIAS yup_python)
+        endif()
     endif()
 endmacro()

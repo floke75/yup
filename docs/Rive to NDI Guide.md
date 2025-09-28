@@ -113,7 +113,9 @@ interfaces above the orchestrator.
 > payloads to :meth:`cyndilib.Sender.write_video_async`. This keeps uploads non-blocking without the
 > redundant `write_video()` + `send_video_async()` combination that sent each frame twice. Older
 > `cyndilib` builds that lack `write_video_async` automatically fall back to the synchronous
-> `write_video()` path.
+> `write_video()` path. The sender handle caches whether asynchronous uploads are supported and emits
+> a single debug log the first time it falls back, so operators can confirm which code path is active
+> without flooding log files during long sessions.
 
 > [!IMPORTANT]
 > When you configure a `frame_rate`, use `NDIOrchestrator.set_stream_start_time()` (or pass the

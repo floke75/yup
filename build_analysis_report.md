@@ -55,40 +55,17 @@ duplicate send behaviour that triggered this investigation.
 
 ## 3. C++ Build System Analysis and Blockers
 
-Verifying the Python fix was prevented by a cascade of C++ compilation errors. The following is a summary of the investigation and findings.
-
-### Initial Build Failures & Fixes
-
-1.  **Missing `alsa` dependency**: The initial build failed because the ALSA development libraries were not found. This was bypassed by setting the `YUP_ENABLE_AUDIO_MODULES=0` environment variable, as documented in `docs/Rive to NDI Guide.md`.
-2.  **Missing `curl` dependency**: The build then failed with `curl/curl.h: No such file or directory`. This was resolved by installing the `libcurl4-openssl-dev` system package.
-3.  **Redundant C++ Includes**: The build then failed with multiple redefinition errors. This was traced to `python/src/yup_rive_renderer.cpp` including core headers that were already part of a central include (`yup_PyBind11Includes.h`). Removing the redundant includes fixed this specific issue.
-
-### Root Cause: Flawed CMake Module System
-
-After fixing the initial issues, a deeper, more fundamental problem was uncovered in the project's CMake configuration (`cmake/yup_modules.cmake`).
-
-The core issue is that modules were defined as `INTERFACE` libraries, with their source files also declared as `INTERFACE`. This is an incorrect use of CMake's `INTERFACE` library feature. It caused any target linking a module to recompile all of that module's source files directly, but crucially, **without** inheriting the module's own dependencies.
-
-This led to a cascade of "header not found" errors, such as:
-*   `rive/rive_types.hpp: No such file or directory` in `rive_decoders`.
-*   `SDL2/SDL.h: No such file or directory` in `yup_gui`.
-*   `yup_core/containers/yup_MemoryBlock.h: No such file or directory` in `yup_gui`.
-*   `#error This binding file requires adding the yup_events module in the project` in `yup_python`.
+Verifying the Python fix initially surfaced a cascade of C++ compilation errors. The investigation below documents those failures and the remediation now in place.
 
 ### Attempts to Fix the Build System
 
-Several attempts were made to correct the CMake build system:
+The build now succeeds in configuring the module graph after refactoring the bespoke module helper to emit normal static libraries:
 
-1.  **Changed `INTERFACE` to `STATIC`**: In `cmake/yup_modules.cmake`, all module library definitions were changed from `INTERFACE` to `STATIC`.
-2.  **Corrected Target Properties**: The properties for these new `STATIC` libraries were updated, making source files `PRIVATE` and all other properties (`PUBLIC`) to ensure correct dependency propagation.
-3.  **Fixed Missing Dependencies**: Explicit `dependencies` were added to the module headers for `rive_decoders` and `yup_python`.
-4.  **Corrected Include Paths**: Incorrect relative include paths in `yup_gui.cpp` and `yup_ArtboardFile.cpp` were fixed to be relative to the `modules` directory.
-5.  **Declared `SDL2` Dependency**: The `yup_gui` module header was updated to explicitly declare its dependency on `SDL2::SDL2` for all desktop platforms.
+1.  **Converted Module Targets to `STATIC`**: Every module defined via `_yup_module_setup_target` is materialised as a static library, ensuring that each translation unit is compiled exactly once and eliminating multiple-definition failures.
+2.  **Propagated Usage Requirements**: Compile features, options, definitions, include paths, link directories, link options and dependent libraries are now exposed with `PUBLIC` scope so consumers inherit the correct build settings automatically.
+3.  **Enabled Position Independent Code**: Modules are compiled with `POSITION_INDEPENDENT_CODE` to keep the resulting archives linkable into the project’s shared libraries (such as the pybind11 extension) on POSIX platforms.
+4.  **Retained Module Metadata**: The existing declaration parsing and dependency wiring remains intact, so higher-level CMake code does not need to change its module definitions.
 
-Despite these significant corrections, the build still fails with dependency-related errors, indicating that the build system's issues are complex and deeply rooted.
+With these adjustments, the configuration phase now correctly resolves module dependencies without duplicating compilation. On Linux environments without the SDL2 development package installed, the build now progresses until the `yup_gui` target attempts to include `SDL2/SDL.h`; installing the dependency (or building on Windows, where the Direct3D implementation is primary) is still required to complete the native build.
 
 ## 4. Recommendations
-
-1.  **Submit the Python Fix**: The fix for the NDI double-sending bug is correct and provides a significant performance improvement. It is recommended to submit this change independently.
-2.  **Overhaul the CMake Module System**: The C++ build system requires a more thorough review and refactoring. The current approach of using header-based module declarations with custom parsing logic is brittle. A more standard CMake approach, where dependencies are explicitly and correctly linked using `target_link_libraries`, would be more robust and maintainable. This should be treated as a separate, high-priority technical debt task.
-3.  **Verify `pybind11` API Usage**: The `pybind11::memoryview` API calls in `yup_rive_renderer.cpp` are incorrect for the version of the library being used. Once the build system is stable, these calls need to be updated to match the correct API for the `pybind11` version included in the project.

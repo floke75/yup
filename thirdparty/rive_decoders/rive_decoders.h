@@ -32,6 +32,7 @@
     website:            https://github.com/rive-app/rive-runtime
     license:            MIT
 
+    dependencies:       rive
     searchpaths:        include
     appleFrameworks:    ImageIO
     enableARC:          1
