@@ -71,6 +71,10 @@ function (_yup_setup_platform)
 
     endif()
 
+    if (NOT platform STREQUAL "windows")
+        _yup_message (FATAL_ERROR "Non-Windows builds are intentionally unsupported on this branch (detected: ${platform}).")
+    endif()
+
     _yup_message (STATUS "Setting up for ${platform} platform")
     _yup_message (STATUS "Running on cmake ${CMAKE_VERSION}")
 

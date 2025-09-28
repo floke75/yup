@@ -31,6 +31,10 @@ endif()
 project (yup VERSION ${yup_version})
 set_property (GLOBAL PROPERTY USE_FOLDERS ON)
 
+if (NOT WIN32 OR CMAKE_SYSTEM_NAME MATCHES "WindowsStore")
+    _yup_message (FATAL_ERROR "This branch only supports desktop Windows builds. Detected CMake system name: ${CMAKE_SYSTEM_NAME}.")
+endif()
+
 # Options
 option (YUP_TARGET_ANDROID "Target Android project" OFF)
 option (YUP_TARGET_ANDROID_BUILD_GRADLE "When building for Android, build the gradle infrastructure" OFF)
