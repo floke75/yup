@@ -181,7 +181,11 @@ function (_yup_module_setup_target module_name
                                    module_link_options
                                    module_frameworks
                                    module_dependencies
-                                   module_arc_enabled)
+                                   module_arc_enabled
+                                   module_available_define)
+    if ("${module_available_define}" STREQUAL "")
+        set (module_available_define 1)
+    endif()
     if (YUP_PLATFORM_MSFT)
         list (APPEND module_defines NOMINMAX=1 WIN32_LEAN_AND_MEAN=1)
         list (APPEND module_options /bigobj)
@@ -211,7 +215,7 @@ function (_yup_module_setup_target module_name
 
     target_compile_definitions (${module_name} INTERFACE
         $<IF:$<CONFIG:Debug>,DEBUG=1,NDEBUG=1>
-        YUP_MODULE_AVAILABLE_${module_name}=1
+        YUP_MODULE_AVAILABLE_${module_name}=${module_available_define}
         YUP_GLOBAL_MODULE_SETTINGS_INCLUDED=1
         ${module_defines})
 
@@ -379,20 +383,33 @@ function (yup_add_module module_path modules_definitions module_group)
     _yup_set_default (module_arc_enabled OFF)
     _yup_set_default (module_needs_python OFF)
 
-    if ("${module_name}" STREQUAL "libjpeg")
-        if (NOT YUP_PLATFORM_EMSCRIPTEN)
-            find_package (JPEG REQUIRED)
-            if (TARGET JPEG::JPEG)
-                list (APPEND module_libs JPEG::JPEG)
-            elseif (JPEG_LIBRARIES)
-                list (APPEND module_libs ${JPEG_LIBRARIES})
-            endif()
+    set (module_available_define 1)
 
-            if (DEFINED JPEG_INCLUDE_DIRS AND NOT "${JPEG_INCLUDE_DIRS}" STREQUAL "")
-                list (APPEND module_searchpaths ${JPEG_INCLUDE_DIRS})
-            elseif (DEFINED JPEG_INCLUDE_DIR AND NOT "${JPEG_INCLUDE_DIR}" STREQUAL "")
-                list (APPEND module_searchpaths ${JPEG_INCLUDE_DIR})
+    if ("${module_name}" STREQUAL "libjpeg")
+        set (module_available_define 0)
+
+        if (NOT YUP_PLATFORM_EMSCRIPTEN)
+            find_package (JPEG QUIET)
+
+            if (JPEG_FOUND)
+                set (module_available_define 1)
+
+                if (TARGET JPEG::JPEG)
+                    list (APPEND module_libs JPEG::JPEG)
+                elseif (JPEG_LIBRARIES)
+                    list (APPEND module_libs ${JPEG_LIBRARIES})
+                endif()
+
+                if (DEFINED JPEG_INCLUDE_DIRS AND NOT "${JPEG_INCLUDE_DIRS}" STREQUAL "")
+                    list (APPEND module_searchpaths ${JPEG_INCLUDE_DIRS})
+                elseif (DEFINED JPEG_INCLUDE_DIR AND NOT "${JPEG_INCLUDE_DIR}" STREQUAL "")
+                    list (APPEND module_searchpaths ${JPEG_INCLUDE_DIR})
+                endif()
+            else()
+                _yup_message (WARNING "System libjpeg not found; disabling JPEG decoding support.")
             endif()
+        else()
+            _yup_message (STATUS "Skipping libjpeg lookup on Emscripten; JPEG decoding disabled.")
         endif()
     endif()
 
@@ -583,7 +600,8 @@ function (yup_add_module module_path modules_definitions module_group)
                               "${module_link_options}"
                               "${module_frameworks}"
                               "${module_dependencies}"
-                              "${module_arc_enabled}")
+                              "${module_arc_enabled}"
+                              "${module_available_define}")
 
     #set (${module_name}_Configs "${module_user_configs}")
     #set (${module_name}_Configs ${${module_name}_Configs} PARENT_SCOPE)
@@ -595,7 +613,11 @@ function (yup_add_module module_path modules_definitions module_group)
     set_source_files_properties (${all_module_files} PROPERTIES HEADER_FILE_ONLY TRUE)
 
     # ==== Setup parent scope variables
-    set (${module_name}_Found ON PARENT_SCOPE)
+    if (module_available_define)
+        set (${module_name}_Found ON PARENT_SCOPE)
+    else()
+        set (${module_name}_Found OFF PARENT_SCOPE)
+    endif()
     set_target_properties (${module_name} PROPERTIES
         YUP_MODULE_PATH "${module_path}"
         YUP_MODULE_HEADER "${module_header}"
