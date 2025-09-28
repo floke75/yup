@@ -182,17 +182,34 @@ function (_yup_module_setup_target module_name
                                    module_frameworks
                                    module_dependencies
                                    module_arc_enabled)
+    get_target_property (module_target_type ${module_name} TYPE)
+    if (NOT module_target_type)
+        _yup_message (FATAL_ERROR "Target ${module_name} has not been created")
+    endif()
+
+    if (module_target_type STREQUAL "INTERFACE_LIBRARY")
+        set (module_sources_scope INTERFACE)
+        set (module_compile_scope INTERFACE)
+        set (module_link_scope INTERFACE)
+        set (module_features_scope INTERFACE)
+    else()
+        set (module_sources_scope PRIVATE)
+        set (module_compile_scope PUBLIC)
+        set (module_link_scope PUBLIC)
+        set (module_features_scope PUBLIC)
+    endif()
+
     if (YUP_PLATFORM_MSFT)
         list (APPEND module_defines NOMINMAX=1 WIN32_LEAN_AND_MEAN=1)
         list (APPEND module_options /bigobj)
     endif()
 
-    target_sources (${module_name} INTERFACE ${module_sources})
+    target_sources (${module_name} ${module_sources_scope} ${module_sources})
 
     if (module_cpp_standard)
-        target_compile_features (${module_name} INTERFACE cxx_std_${module_cpp_standard})
+        target_compile_features (${module_name} ${module_features_scope} cxx_std_${module_cpp_standard})
     else()
-        target_compile_features (${module_name} INTERFACE cxx_std_17)
+        target_compile_features (${module_name} ${module_features_scope} cxx_std_17)
     endif()
 
     set_target_properties (${module_name} PROPERTIES
@@ -206,27 +223,27 @@ function (_yup_module_setup_target module_name
             XCODE_GENERATE_SCHEME OFF)
     endif()
 
-    target_compile_options (${module_name} INTERFACE
+    target_compile_options (${module_name} ${module_compile_scope}
         ${module_options})
 
-    target_compile_definitions (${module_name} INTERFACE
+    target_compile_definitions (${module_name} ${module_compile_scope}
         $<IF:$<CONFIG:Debug>,DEBUG=1,NDEBUG=1>
         YUP_MODULE_AVAILABLE_${module_name}=1
         YUP_GLOBAL_MODULE_SETTINGS_INCLUDED=1
         ${module_defines})
 
-    target_include_directories (${module_name} INTERFACE
+    target_include_directories (${module_name} ${module_link_scope}
         ${module_include_paths})
 
-    target_link_directories (${module_name} INTERFACE
+    target_link_directories (${module_name} ${module_link_scope}
         ${module_libs_paths})
 
-    target_link_libraries (${module_name} INTERFACE
+    target_link_libraries (${module_name} ${module_link_scope}
         ${module_libs}
         ${module_frameworks}
         ${module_dependencies})
 
-    target_link_options (${module_name} INTERFACE
+    target_link_options (${module_name} ${module_link_scope}
         ${module_link_options})
 
     # Add coverage support if enabled
@@ -343,7 +360,7 @@ function (yup_add_module module_path modules_definitions module_group)
     endif()
 
     # ==== Add module as library
-    add_library (${module_name} INTERFACE)
+    add_library (${module_name} STATIC)
     set_target_properties (${module_name} PROPERTIES FOLDER "${module_group}")
 
     # ==== Parse module declaration string

@@ -6,6 +6,11 @@ Their structure is designed to make it as simple as possible for modules to be a
 
 Each module may have dependencies on other modules, but should be otherwise self-contained.
 
+When building with the bundled CMake tooling, every module is compiled into its own static
+library. Linking a module from another target will therefore reuse the prebuilt object files
+while inheriting the module's include directories, compile definitions, and external library
+dependencies.
+
 ## File structure
 
 Each module lives inside a folder whose name is the same as the name of the module. The YUP convention for naming modules is lower-case with underscores, e.g.
