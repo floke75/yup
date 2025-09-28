@@ -224,8 +224,26 @@ function (yup_standalone_app)
         ${additional_link_options}
         ${YUP_ARG_LINK_OPTIONS})
 
+    set (resolved_modules ${YUP_ARG_MODULES})
+    set (dependency_queue ${YUP_ARG_MODULES})
+
+    while (dependency_queue)
+        list (POP_FRONT dependency_queue module_target)
+        if (TARGET ${module_target})
+            get_target_property (module_dependencies ${module_target} YUP_MODULE_DEPENDENCIES)
+            if (module_dependencies AND NOT "${module_dependencies}" STREQUAL "module_dependencies-NOTFOUND")
+                foreach (dependency IN LISTS module_dependencies)
+                    if (dependency AND NOT dependency IN_LIST resolved_modules)
+                        list (APPEND resolved_modules ${dependency})
+                        list (APPEND dependency_queue ${dependency})
+                    endif()
+                endforeach()
+            endif()
+        endif()
+    endwhile()
+
     target_link_libraries (${target_name} PRIVATE
         ${additional_libraries}
-        ${YUP_ARG_MODULES})
+        ${resolved_modules})
 
 endfunction()
