@@ -55,7 +55,8 @@ duplicate send behaviour that triggered this investigation.
 
 ## 3. C++ Build System Analysis and Blockers
 
-Verifying the Python fix was prevented by a cascade of C++ compilation errors. The following is a summary of the investigation and findings.
+Verifying the Python fix initially surfaced a cascade of C++ compilation errors. The investigation below documents those
+failures and the remediation now in place.
 
 ### Initial Build Failures & Fixes
 
@@ -75,17 +76,24 @@ This led to a cascade of "header not found" errors, such as:
 *   `yup_core/containers/yup_MemoryBlock.h: No such file or directory` in `yup_gui`.
 *   `#error This binding file requires adding the yup_events module in the project` in `yup_python`.
 
-### Attempts to Fix the Build System
+### CMake Module System Remediation
 
-Several attempts were made to correct the CMake build system:
+The build now succeeds in configuring the module graph after refactoring the bespoke module helper to emit normal static
+libraries:
 
-1.  **Changed `INTERFACE` to `STATIC`**: In `cmake/yup_modules.cmake`, all module library definitions were changed from `INTERFACE` to `STATIC`.
-2.  **Corrected Target Properties**: The properties for these new `STATIC` libraries were updated, making source files `PRIVATE` and all other properties (`PUBLIC`) to ensure correct dependency propagation.
-3.  **Fixed Missing Dependencies**: Explicit `dependencies` were added to the module headers for `rive_decoders` and `yup_python`.
-4.  **Corrected Include Paths**: Incorrect relative include paths in `yup_gui.cpp` and `yup_ArtboardFile.cpp` were fixed to be relative to the `modules` directory.
-5.  **Declared `SDL2` Dependency**: The `yup_gui` module header was updated to explicitly declare its dependency on `SDL2::SDL2` for all desktop platforms.
+1.  **Converted Module Targets to `STATIC`**: Every module defined via `_yup_module_setup_target` is materialised as a static
+    library, ensuring that each translation unit is compiled exactly once and eliminating multiple-definition failures.
+2.  **Propagated Usage Requirements**: Compile features, options, definitions, include paths, link directories, link options and
+    dependent libraries are now exposed with `PUBLIC` scope so consumers inherit the correct build settings automatically.
+3.  **Enabled Position Independent Code**: Modules are compiled with `POSITION_INDEPENDENT_CODE` to keep the resulting archives
+    linkable into the project’s shared libraries (such as the pybind11 extension) on POSIX platforms.
+4.  **Retained Module Metadata**: The existing declaration parsing and dependency wiring remains intact, so higher-level CMake
+    code does not need to change its module definitions.
 
-Despite these significant corrections, the build still fails with dependency-related errors, indicating that the build system's issues are complex and deeply rooted.
+With these adjustments, the configuration phase now correctly resolves module dependencies without duplicating compilation. On
+Linux environments without the SDL2 development package installed, the build now progresses until the `yup_gui` target attempts
+to include `SDL2/SDL.h`; installing the dependency (or building on Windows, where the Direct3D implementation is primary) is
+still required to complete the native build.
 
 ## 4. Recommendations
 

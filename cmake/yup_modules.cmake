@@ -187,18 +187,21 @@ function (_yup_module_setup_target module_name
         list (APPEND module_options /bigobj)
     endif()
 
-    target_sources (${module_name} INTERFACE ${module_sources})
+    if (module_sources)
+        target_sources (${module_name} PRIVATE ${module_sources})
+    endif()
 
     if (module_cpp_standard)
-        target_compile_features (${module_name} INTERFACE cxx_std_${module_cpp_standard})
+        target_compile_features (${module_name} PUBLIC cxx_std_${module_cpp_standard})
     else()
-        target_compile_features (${module_name} INTERFACE cxx_std_17)
+        target_compile_features (${module_name} PUBLIC cxx_std_17)
     endif()
 
     set_target_properties (${module_name} PROPERTIES
         CXX_EXTENSIONS OFF
         CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON)
+        VISIBILITY_INLINES_HIDDEN ON
+        POSITION_INDEPENDENT_CODE ON)
 
     if (YUP_PLATFORM_APPLE)
         set_target_properties (${module_name} PROPERTIES
@@ -206,27 +209,27 @@ function (_yup_module_setup_target module_name
             XCODE_GENERATE_SCHEME OFF)
     endif()
 
-    target_compile_options (${module_name} INTERFACE
+    target_compile_options (${module_name} PUBLIC
         ${module_options})
 
-    target_compile_definitions (${module_name} INTERFACE
+    target_compile_definitions (${module_name} PUBLIC
         $<IF:$<CONFIG:Debug>,DEBUG=1,NDEBUG=1>
         YUP_MODULE_AVAILABLE_${module_name}=1
         YUP_GLOBAL_MODULE_SETTINGS_INCLUDED=1
         ${module_defines})
 
-    target_include_directories (${module_name} INTERFACE
+    target_include_directories (${module_name} PUBLIC
         ${module_include_paths})
 
-    target_link_directories (${module_name} INTERFACE
+    target_link_directories (${module_name} PUBLIC
         ${module_libs_paths})
 
-    target_link_libraries (${module_name} INTERFACE
+    target_link_libraries (${module_name} PUBLIC
         ${module_libs}
         ${module_frameworks}
         ${module_dependencies})
 
-    target_link_options (${module_name} INTERFACE
+    target_link_options (${module_name} PUBLIC
         ${module_link_options})
 
     # Add coverage support if enabled
@@ -261,7 +264,7 @@ function (_yup_module_setup_plugin_client target_name plugin_client_target folde
         _yup_message (FATAL_ERROR "Invalid plugin type: ${plugin_type}. Must be either 'vst3', 'clap' or 'standalone'")
     endif()
 
-    add_library (${custom_target_name} INTERFACE)
+    add_library (${custom_target_name} STATIC)
     set_target_properties (${custom_target_name} PROPERTIES FOLDER "${folder_name}")
 
     get_target_property (module_path ${plugin_client_target} YUP_MODULE_PATH)
@@ -343,7 +346,7 @@ function (yup_add_module module_path modules_definitions module_group)
     endif()
 
     # ==== Add module as library
-    add_library (${module_name} INTERFACE)
+    add_library (${module_name} STATIC)
     set_target_properties (${module_name} PROPERTIES FOLDER "${module_group}")
 
     # ==== Parse module declaration string
