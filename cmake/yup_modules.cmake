@@ -176,6 +176,7 @@ function (_yup_module_setup_target module_name
                                    module_options
                                    module_defines
                                    module_sources
+                                   module_usage_scope
                                    module_libs
                                    module_libs_paths
                                    module_link_options
@@ -191,12 +192,23 @@ function (_yup_module_setup_target module_name
         list (APPEND module_options /bigobj)
     endif()
 
-    target_sources (${module_name} INTERFACE ${module_sources})
+    if ("${module_usage_scope}" STREQUAL "")
+        set (module_usage_scope INTERFACE)
+    endif()
+
+    if (module_sources)
+        if (module_usage_scope STREQUAL INTERFACE)
+            set (module_sources_scope INTERFACE)
+        else()
+            set (module_sources_scope PRIVATE)
+        endif()
+        target_sources (${module_name} ${module_sources_scope} ${module_sources})
+    endif()
 
     if (module_cpp_standard)
-        target_compile_features (${module_name} INTERFACE cxx_std_${module_cpp_standard})
+        target_compile_features (${module_name} ${module_usage_scope} cxx_std_${module_cpp_standard})
     else()
-        target_compile_features (${module_name} INTERFACE cxx_std_17)
+        target_compile_features (${module_name} ${module_usage_scope} cxx_std_17)
     endif()
 
     set_target_properties (${module_name} PROPERTIES
@@ -210,27 +222,27 @@ function (_yup_module_setup_target module_name
             XCODE_GENERATE_SCHEME OFF)
     endif()
 
-    target_compile_options (${module_name} INTERFACE
+    target_compile_options (${module_name} ${module_usage_scope}
         ${module_options})
 
-    target_compile_definitions (${module_name} INTERFACE
+    target_compile_definitions (${module_name} ${module_usage_scope}
         $<IF:$<CONFIG:Debug>,DEBUG=1,NDEBUG=1>
         YUP_MODULE_AVAILABLE_${module_name}=${module_available_define}
         YUP_GLOBAL_MODULE_SETTINGS_INCLUDED=1
         ${module_defines})
 
-    target_include_directories (${module_name} INTERFACE
+    target_include_directories (${module_name} ${module_usage_scope}
         ${module_include_paths})
 
-    target_link_directories (${module_name} INTERFACE
+    target_link_directories (${module_name} ${module_usage_scope}
         ${module_libs_paths})
 
-    target_link_libraries (${module_name} INTERFACE
+    target_link_libraries (${module_name} ${module_usage_scope}
         ${module_libs}
         ${module_frameworks}
         ${module_dependencies})
 
-    target_link_options (${module_name} INTERFACE
+    target_link_options (${module_name} ${module_usage_scope}
         ${module_link_options})
 
     # Add coverage support if enabled
@@ -314,6 +326,7 @@ function (_yup_module_setup_plugin_client target_name plugin_client_target folde
                               "${module_options}"
                               "${module_defines}"
                               "${module_sources}"
+                              INTERFACE
                               "${module_libs}"
                               "${module_libs_paths}"
                               "${module_link_options}"
@@ -346,10 +359,6 @@ function (yup_add_module module_path modules_definitions module_group)
     if (NOT EXISTS ${module_header})
         _yup_message (FATAL_ERROR "Module header ${module_header} in module ${module_path} not found")
     endif()
-
-    # ==== Add module as library
-    add_library (${module_name} INTERFACE)
-    set_target_properties (${module_name} PROPERTIES FOLDER "${module_group}")
 
     # ==== Parse module declaration string
     _yup_module_parse_config ("${module_header}" module_configs module_user_configs)
@@ -614,6 +623,34 @@ function (yup_add_module module_path modules_definitions module_group)
     # ==== Scan sources to include
     _yup_module_collect_sources ("${module_path}" module_sources)
 
+    set (_yup_compilable_extensions
+        ".c"
+        ".cc"
+        ".cxx"
+        ".cpp"
+        ".m"
+        ".mm"
+        ".rc"
+        ".def")
+
+    set (module_target_type INTERFACE)
+    set (module_usage_scope INTERFACE)
+    set (module_sources_scope INTERFACE)
+
+    foreach (module_source IN LISTS module_sources)
+        get_filename_component (module_source_extension ${module_source} EXT)
+        string (TOLOWER "${module_source_extension}" module_source_extension)
+        if (module_source_extension IN_LIST _yup_compilable_extensions)
+            set (module_target_type STATIC)
+            set (module_usage_scope PUBLIC)
+            set (module_sources_scope PRIVATE)
+            break()
+        endif()
+    endforeach()
+
+    add_library (${module_name} ${module_target_type})
+    set_target_properties (${module_name} PROPERTIES FOLDER "${module_group}")
+
     # ==== Setup module sources and properties
     _yup_module_setup_target ("${module_name}"
                               "${module_path}"
@@ -622,6 +659,7 @@ function (yup_add_module module_path modules_definitions module_group)
                               "${module_options}"
                               "${module_defines}"
                               "${module_sources}"
+                              "${module_usage_scope}"
                               "${module_libs}"
                               "${module_libs_paths}"
                               "${module_link_options}"
@@ -634,7 +672,9 @@ function (yup_add_module module_path modules_definitions module_group)
     #set (${module_name}_Configs ${${module_name}_Configs} PARENT_SCOPE)
 
     _yup_glob_recurse ("${module_path}/*" all_module_files)
-    target_sources (${module_name} PRIVATE ${all_module_files})
+    if (all_module_files)
+        target_sources (${module_name} ${module_sources_scope} ${all_module_files})
+    endif()
     source_group (TREE ${module_path}/ FILES ${all_module_files})
     list (REMOVE_ITEM all_module_files ${module_sources})
     set_source_files_properties (${all_module_files} PROPERTIES HEADER_FILE_ONLY TRUE)
@@ -658,7 +698,8 @@ function (yup_add_module module_path modules_definitions module_group)
         YUP_MODULE_LINK_OPTIONS "${module_link_options}"
         YUP_MODULE_FRAMEWORK "${module_frameworks}"
         YUP_MODULE_DEPENDENCIES "${module_dependencies}"
-        YUP_MODULE_ARC_ENABLED "${module_arc_enabled}")
+        YUP_MODULE_ARC_ENABLED "${module_arc_enabled}"
+        YUP_MODULE_USAGE_SCOPE "${module_usage_scope}")
 
     # ==== Add Java support for Android if available (after target properties are set)
     if (YUP_PLATFORM_ANDROID AND YUP_BUILD_JAVA_SUPPORT)
