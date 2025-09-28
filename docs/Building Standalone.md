@@ -116,7 +116,8 @@ yup_standalone_app (
         yup_audio_devices
         yup_gui
         libpng
-        libwebp)
+        libwebp
+        libjpeg)
 
 # Add source files
 file (GLOB sources "${CMAKE_CURRENT_LIST_DIR}/*.cpp")
@@ -160,6 +161,7 @@ yup_standalone_app (
         yup_gui
         libpng
         libwebp
+        libjpeg
         ${target_name}_binary_data) # << add this
 ```
 

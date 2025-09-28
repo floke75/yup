@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the YUP library.
-   Copyright (c) 2024 - kunitoki@gmail.com
+   Copyright (c) 2025 - kunitoki@gmail.com
 
    YUP is an open source library subject to open-source licensing.
 
@@ -24,18 +24,13 @@
 
   BEGIN_YUP_MODULE_DECLARATION
 
-    ID:                 rive_decoders
-    vendor:             rive
-    version:            1.0
-    name:               Rive Decoders.
-    description:        The Rive Decoders is a companion library for ratser image decoding.
-    website:            https://github.com/rive-app/rive-runtime
-    license:            MIT
-
-    dependencies:       libpng libwebp libjpeg
-    searchpaths:        include
-    appleFrameworks:    ImageIO
-    enableARC:          1
+    ID:                 libjpeg
+    vendor:             libjpeg-turbo
+    version:            3.0.3
+    name:               libjpeg-turbo JPEG codec
+    description:        SIMD-accelerated JPEG codec compatible with libjpeg API.
+    website:            https://libjpeg-turbo.org/
+    license:            BSD-3-Clause
 
   END_YUP_MODULE_DECLARATION
 
@@ -43,17 +38,3 @@
 */
 
 #pragma once
-
-#if YUP_MODULE_AVAILABLE_libpng
-#define RIVE_PNG 1
-#endif
-
-#if YUP_MODULE_AVAILABLE_libwebp
-#define RIVE_WEBP 1
-#endif
-
-#if YUP_MODULE_AVAILABLE_libjpeg
-#define RIVE_JPEG 1
-#endif
-
-#include "include/rive/decoders/bitmap_decoder.hpp"

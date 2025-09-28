@@ -33,7 +33,12 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_TESTS=ON
+    - uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkgTriplet: x64-windows
+        runVcpkgInstall: true
+        packages: libjpeg-turbo
+    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_TESTS=ON -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake"
     - run: cmake --build ${{ runner.workspace }}/build --config Debug --parallel 4 --target yup_tests
     - working-directory: ${{ runner.workspace }}/build/tests/Debug
       run: ./yup_tests.exe
@@ -47,7 +52,12 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON
+    - uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkgTriplet: x64-windows
+        runVcpkgInstall: true
+        packages: libjpeg-turbo
+    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake"
     - run: cmake --build ${{ runner.workspace }}/build --config Debug --parallel 4 --target example_console
     - run: cmake --build ${{ runner.workspace }}/build --config Release --parallel 4 --target example_console
 
@@ -55,7 +65,12 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON
+    - uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkgTriplet: x64-windows
+        runVcpkgInstall: true
+        packages: libjpeg-turbo
+    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake"
     - run: cmake --build ${{ runner.workspace }}/build --config Debug --parallel 4 --target example_app
     - run: cmake --build ${{ runner.workspace }}/build --config Release --parallel 4 --target example_app
 
@@ -63,7 +78,12 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON
+    - uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkgTriplet: x64-windows
+        runVcpkgInstall: true
+        packages: libjpeg-turbo
+    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake"
     - run: cmake --build ${{ runner.workspace }}/build --config Debug --parallel 4 --target example_graphics
     - run: cmake --build ${{ runner.workspace }}/build --config Release --parallel 4 --target example_graphics
 
@@ -71,7 +91,12 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON
+    - uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkgTriplet: x64-windows
+        runVcpkgInstall: true
+        packages: libjpeg-turbo
+    - run: cmake ${{ github.workspace }} -B ${{ runner.workspace }}/build -DYUP_ENABLE_EXAMPLES=ON -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake"
     - run: cmake --build ${{ runner.workspace }}/build --config Debug --parallel 4 --target example_plugin_clap_plugin
     - run: cmake --build ${{ runner.workspace }}/build --config Release --parallel 4 --target example_plugin_clap_plugin
     #- run: cmake --build ${{ runner.workspace }}/build --config Debug --parallel 4 --target example_plugin_vst3_plugin
