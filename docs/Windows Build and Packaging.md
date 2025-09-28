@@ -5,6 +5,13 @@ packaging the Python bindings, and validating the NDI orchestration path on Wind
 The steps assume Visual Studio 2022 (or another C++20-compatible compiler), Python 3.11+,
 and the Windows 10 or 11 SDK are installed.
 
+> [!IMPORTANT]
+> This branch intentionally supports **desktop Windows builds only**. The CMake tooling now
+> hard-errors when configured on macOS, Linux, UWP, or other non-Windows targets so that the
+> engineering effort stays focused on the Direct3D 11 → Python → NDI pipeline. If you need
+> multiplatform support, use an earlier commit before the Windows-only guard was introduced
+> or track the upstream repository for future cross-platform updates.
+
 ## 0. Automated bootstrap (optional)
 
 When you want a turnkey setup, run the PowerShell helper from a VS 2022 developer
