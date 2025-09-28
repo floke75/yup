@@ -319,7 +319,8 @@ function (_yup_module_setup_plugin_client target_name plugin_client_target folde
                               "${module_link_options}"
                               "${module_frameworks}"
                               "${module_dependencies}"
-                              "${module_arc_enabled}")
+                              "${module_arc_enabled}"
+                              1)
 
     _yup_glob_recurse ("${module_path}/${plugin_type}/*" all_module_files)
     target_sources (${custom_target_name} PRIVATE ${all_module_files})
