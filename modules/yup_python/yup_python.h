@@ -30,7 +30,7 @@
   website:            https://github.com/kunitoki/yup
   license:            ISC
 
-  dependencies:       yup_core
+  dependencies:       yup_core yup_events yup_data_model yup_graphics yup_gui
   needsPython:        true
 
  END_YUP_MODULE_DECLARATION

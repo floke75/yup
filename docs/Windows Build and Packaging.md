@@ -99,6 +99,9 @@ to adjust the workflow. Point `-PythonExecutable` at a specific interpreter if
    > third-party include directory or define when adding new consumers of `yup_gui`,
    > `yup_python`, or the Rive decoders.
 
+   > [!TIP]
+   > SDL2 is now fetched automatically during configuration on Windows, so no manual SDK installation is required.
+
 2. Build the desired configuration:
 
    ```powershell
@@ -180,3 +183,4 @@ with the same paths listed in the recipe.
 - **`just` is not recognized** – Install the utility via `winget install --id Casey.Just` or
   download the latest release from GitHub and add it to `PATH`. Alternatively, run the
   equivalent `python -m build`/`python -m pytest` commands directly.
+

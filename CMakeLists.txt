@@ -63,6 +63,11 @@ if (YUP_EXPORT_MODULES)
         set (enable_python OFF)
     endif()
 
+    if (YUP_PLATFORM_WINDOWS)
+        _yup_message (STATUS "Fetching SDL2 dependency")
+        _yup_fetch_sdl2()
+    endif()
+
     yup_add_default_modules (${CMAKE_CURRENT_LIST_DIR} ENABLE_PYTHON ${enable_python} ENABLE_AUDIO ${YUP_ENABLE_AUDIO_MODULES})
 endif()
 

@@ -32,8 +32,8 @@
     website:            https://github.com/rive-app/rive-runtime
     license:            MIT
 
-    dependencies:       libpng libwebp libjpeg
-    searchpaths:        include
+    dependencies:       libpng libwebp libjpeg rive
+    searchpaths:        include ../rive/include
     appleFrameworks:    ImageIO
     enableARC:          1
 

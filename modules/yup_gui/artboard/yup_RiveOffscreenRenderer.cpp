@@ -176,11 +176,10 @@ struct RiveOffscreenRenderer::Impl
         if (! initialised)
             return failWith ("Rive offscreen renderer is not available");
 
-        auto factory = renderContext->factory();
-        if (factory == nullptr)
-            return failWith ("Missing Rive factory");
+        if (renderContext == nullptr)
+            return failWith ("Missing Rive render context");
 
-        auto loadResult = loader (*factory);
+        auto loadResult = loader (*renderContext);
         if (! loadResult)
         {
             lastError = loadResult.getErrorMessage();
@@ -402,6 +401,8 @@ struct RiveOffscreenRenderer::Impl
 
     const String& getLastError() const noexcept { return lastError; }
 
+    String getActiveArtboardName() const { return activeArtboardName; }
+
 private:
     void initialise()
     {
@@ -533,22 +534,6 @@ private:
         lastError.clear();
     }
 
-    static String describeMapFailure (HRESULT hr)
-    {
-        const auto message = makeErrorMessage (hr);
-        if (! message.empty())
-        {
-            return String::formatted (
-                "ID3D11DeviceContext::Map failed (0x%08X): %s",
-                static_cast<unsigned int> (hr),
-                message.c_str());
-        }
-
-        return String::formatted (
-            "ID3D11DeviceContext::Map failed (0x%08X)",
-            static_cast<unsigned int> (hr));
-    }
-
     void resetScenes()
     {
         scene = nullptr;
@@ -578,7 +563,7 @@ private:
     {
         if (artboard == nullptr)
         {
-            viewTransform = rive::Mat2D::identity();
+            viewTransform = rive::Mat2D();
             return;
         }
 
@@ -697,8 +682,8 @@ private:
     std::unique_ptr<rive::RiveRenderer> renderer;
 
     std::vector<std::vector<uint8>> stagingBuffers;
-    std::vector<FrameState> frameStates;
-    std::deque<std::size_t> readyFrames;
+    mutable std::vector<FrameState> frameStates;
+    mutable std::deque<std::size_t> readyFrames;
     std::size_t frameSize = 0;
     std::size_t stagingBufferCount = 1;
     std::size_t nextWriteIndex = 0;
@@ -714,7 +699,7 @@ private:
     std::unique_ptr<rive::StateMachineInstance> stateMachine;
     rive::Scene* scene = nullptr;
 
-    rive::Mat2D viewTransform = rive::Mat2D::identity();
+    rive::Mat2D viewTransform = rive::Mat2D();
 
     String lastError;
     String activeArtboardName;
@@ -807,13 +792,25 @@ private:
         return Result::ok();
     }
 
-    String getActiveArtboardName() const
-    {
-        return activeArtboardName;
-    }
 };
 
 } // namespace yup
+
+yup::String yup::RiveOffscreenRenderer::Impl::describeMapFailure (HRESULT hr)
+{
+    const auto message = makeErrorMessage (hr);
+    if (! message.empty())
+    {
+        return String::formatted (
+            "ID3D11DeviceContext::Map failed (0x%08X): %s",
+            static_cast<unsigned int> (hr),
+            message.c_str());
+    }
+
+    return String::formatted (
+        "ID3D11DeviceContext::Map failed (0x%08X)",
+        static_cast<unsigned int> (hr));
+}
 
 #else
 
