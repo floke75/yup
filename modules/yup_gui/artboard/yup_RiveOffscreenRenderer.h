@@ -22,6 +22,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 namespace yup
 {
@@ -64,6 +65,9 @@ public:
 
     /** Loads a Rive file from an in-memory buffer. */
     Result loadFromBytes (Span<const uint8> bytes, const String& artboardName = {});
+
+    /** Loads a Rive file from a standard byte container. */
+    Result loadFromBytes (const std::vector<uint8>& bytes, const String& artboardName = {});
 
     /** Lists the available artboards in the currently loaded file. */
     StringArray listArtboards() const;

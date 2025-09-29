@@ -28,6 +28,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <utility>
@@ -404,6 +405,7 @@ struct RiveOffscreenRenderer::Impl
     String getActiveArtboardName() const { return activeArtboardName; }
 
 private:
+
     void initialise()
     {
         using Microsoft::WRL::ComPtr;
@@ -438,38 +440,66 @@ private:
                 static_cast<unsigned int> (hr));
         };
 
-        auto hr = D3D11CreateDevice (nullptr,
-                                      D3D_DRIVER_TYPE_HARDWARE,
-                                      nullptr,
-                                      creationFlags,
-                                      requestedLevels,
-                                      static_cast<UINT> (std::size (requestedLevels)),
-                                      D3D11_SDK_VERSION,
-                                      createdDevice.GetAddressOf(),
-                                      nullptr,
-                                      createdContext.GetAddressOf());
-
-        if (FAILED (hr))
+        const auto createDevice = [&] (D3D_DRIVER_TYPE driverType, const char* driverName, String& errorOut) -> bool
         {
-            const auto hardwareError = describeFailure ("hardware", hr);
+            ComPtr<ID3D11Device> tempDevice;
+            ComPtr<ID3D11DeviceContext> tempContext;
 
-            hr = D3D11CreateDevice (nullptr,
-                                     D3D_DRIVER_TYPE_WARP,
-                                     nullptr,
-                                     creationFlags,
-                                     requestedLevels,
-                                     static_cast<UINT> (std::size (requestedLevels)),
-                                     D3D11_SDK_VERSION,
-                                     createdDevice.GetAddressOf(),
-                                     nullptr,
-                                     createdContext.GetAddressOf());
+            auto hr = D3D11CreateDevice (nullptr,
+                                         driverType,
+                                         nullptr,
+                                         creationFlags,
+                                         requestedLevels,
+                                         static_cast<UINT> (std::size (requestedLevels)),
+                                         D3D11_SDK_VERSION,
+                                         tempDevice.GetAddressOf(),
+                                         nullptr,
+                                         tempContext.GetAddressOf());
+
+            if (FAILED (hr) && hr == E_INVALIDARG)
+            {
+                hr = D3D11CreateDevice (nullptr,
+                                         driverType,
+                                         nullptr,
+                                         creationFlags,
+                                         nullptr,
+                                         0,
+                                         D3D11_SDK_VERSION,
+                                         tempDevice.GetAddressOf(),
+                                         nullptr,
+                                         tempContext.GetAddressOf());
+            }
 
             if (FAILED (hr))
             {
-                const auto warpError = describeFailure ("WARP", hr);
+                errorOut = describeFailure (driverName, hr);
+                return false;
+            }
+
+            errorOut.clear();
+            createdDevice = std::move (tempDevice);
+            createdContext = std::move (tempContext);
+            return true;
+        };
+
+        String hardwareError;
+
+        if (! createDevice (D3D_DRIVER_TYPE_HARDWARE, "hardware", hardwareError))
+        {
+            String warpError;
+
+            if (! createDevice (D3D_DRIVER_TYPE_WARP, "WARP", warpError))
+            {
                 lastError = hardwareError;
-                lastError += "; ";
-                lastError += warpError;
+
+                if (warpError.isNotEmpty())
+                {
+                    if (lastError.isNotEmpty())
+                        lastError += "; ";
+
+                    lastError += warpError;
+                }
+
                 return;
             }
         }
@@ -477,61 +507,91 @@ private:
         device = std::move (createdDevice);
         deviceContext = std::move (createdContext);
 
-        rive::gpu::D3DContextOptions contextOptions;
-        renderContext = rive::gpu::RenderContextD3DImpl::MakeContext (device, deviceContext, contextOptions);
-
-        if (renderContext == nullptr)
+        try
         {
-            lastError = "Unable to create Rive render context";
-            return;
-        }
+            rive::gpu::D3DContextOptions contextOptions;
+            renderContext = rive::gpu::RenderContextD3DImpl::MakeContext (device, deviceContext, contextOptions);
 
-        auto* renderContextImpl = renderContext->static_impl_cast<rive::gpu::RenderContextD3DImpl>();
-        renderTarget = renderContextImpl->makeRenderTarget (static_cast<uint32_t> (width), static_cast<uint32_t> (height));
+            if (renderContext == nullptr)
+            {
+                lastError = "Unable to create Rive render context";
+                releaseDeviceResources();
+                return;
+            }
 
-        if (! renderTarget)
-        {
-            lastError = "Unable to create render target";
-            return;
-        }
+            auto* renderContextImpl = renderContext->static_impl_cast<rive::gpu::RenderContextD3DImpl>();
+            renderTarget = renderContextImpl->makeRenderTarget (static_cast<uint32_t> (width), static_cast<uint32_t> (height));
 
-        auto desc = makeTextureDescription (static_cast<UINT> (width), static_cast<UINT> (height), D3D11_USAGE_DEFAULT, D3D11_BIND_RENDER_TARGET, 0);
-        hr = device->CreateTexture2D (&desc, nullptr, renderTexture.GetAddressOf());
-        if (FAILED (hr))
-        {
-            lastError = String::formatted (
-                "CreateTexture2D (render target) failed (0x%08X): %s",
-                static_cast<unsigned int> (hr),
-                makeErrorMessage (hr).c_str());
-            return;
-        }
+            if (! renderTarget)
+            {
+                lastError = "Unable to create render target";
+                releaseDeviceResources();
+                return;
+            }
 
-        desc = makeTextureDescription (static_cast<UINT> (width), static_cast<UINT> (height), D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ);
-
-        for (auto& texture : stagingTextures)
-        {
-            hr = device->CreateTexture2D (&desc, nullptr, texture.GetAddressOf());
+            auto desc = makeTextureDescription (static_cast<UINT> (width), static_cast<UINT> (height), D3D11_USAGE_DEFAULT, D3D11_BIND_RENDER_TARGET, 0);
+            auto hr = device->CreateTexture2D (&desc, nullptr, renderTexture.GetAddressOf());
             if (FAILED (hr))
             {
                 lastError = String::formatted (
-                    "CreateTexture2D (staging) failed (0x%08X): %s",
+                    "CreateTexture2D (render target) failed (0x%08X): %s",
                     static_cast<unsigned int> (hr),
                     makeErrorMessage (hr).c_str());
+                releaseDeviceResources();
                 return;
             }
-        }
 
+            desc = makeTextureDescription (static_cast<UINT> (width), static_cast<UINT> (height), D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ);
+
+            for (auto& texture : stagingTextures)
+            {
+                hr = device->CreateTexture2D (&desc, nullptr, texture.GetAddressOf());
+                if (FAILED (hr))
+                {
+                    lastError = String::formatted (
+                        "CreateTexture2D (staging) failed (0x%08X): %s",
+                        static_cast<unsigned int> (hr),
+                        makeErrorMessage (hr).c_str());
+                    releaseDeviceResources();
+                    return;
+                }
+            }
+
+            {
+                std::scoped_lock lock (frameMutex);
+                readyFrames.clear();
+                std::fill (frameStates.begin(), frameStates.end(), FrameState::Available);
+                frameSnapshotDirty = false;
+                nextWriteIndex = 0;
+            }
+
+            renderer = std::make_unique<rive::RiveRenderer> (renderContext.get());
+            initialised = true;
+            lastError.clear();
+        }
+        catch (const std::exception& exc)
         {
-            std::scoped_lock lock (frameMutex);
-            readyFrames.clear();
-            std::fill (frameStates.begin(), frameStates.end(), FrameState::Available);
-            frameSnapshotDirty = false;
-            nextWriteIndex = 0;
+            lastError = String ("Failed to initialise Rive renderer: ") + exc.what();
+            releaseDeviceResources();
         }
+        catch (...)
+        {
+            lastError = "Failed to initialise Rive renderer due to an unknown error";
+            releaseDeviceResources();
+        }
+    }
 
-        renderer = std::make_unique<rive::RiveRenderer> (renderContext.get());
-        initialised = true;
-        lastError.clear();
+    void releaseDeviceResources()
+    {
+        renderer.reset();
+        renderTarget.reset();
+        renderContext.reset();
+        renderTexture.Reset();
+        deviceContext.Reset();
+        device.Reset();
+
+        for (auto& texture : stagingTextures)
+            texture.Reset();
     }
 
     void resetScenes()
@@ -969,6 +1029,11 @@ Result RiveOffscreenRenderer::load (const File& file, const String& artboardName
 Result RiveOffscreenRenderer::loadFromBytes (Span<const uint8> bytes, const String& artboardName)
 {
     return impl->load (bytes, artboardName);
+}
+
+Result RiveOffscreenRenderer::loadFromBytes (const std::vector<uint8>& bytes, const String& artboardName)
+{
+    return loadFromBytes (Span<const uint8> (static_cast<const uint8*> (bytes.data()), bytes.size()), artboardName);
 }
 
 StringArray RiveOffscreenRenderer::listArtboards() const

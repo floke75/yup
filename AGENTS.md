@@ -150,9 +150,14 @@ Primary module headers (e.g., `yup_graphics.h`) must also include the declaratio
 - [ ] Publish an updated control-panel payload schema example in `docs/rive_ndi_overview.md` and sync the same JSON snippet into `docs/demos/` release notes.
 - [ ] Refresh `tools/install_windows.ps1` to cover the new optional browser build step and validate the generated artifacts with `just smoke:ndi` on a clean Windows host.
 - [ ] Record a short troubleshooting appendix for common Windows GPU driver issues discovered during the latest offscreen renderer QA pass.
+- [ ] Validate `python/examples/run_rive_ndi.py` on an environment where offscreen D3D11 initialisation succeeds; current host (RTX 5090) still raises `ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`. Next steps: instrument `RiveOffscreenRenderer` around `D3D11CreateDevice` to log the `HRESULT`, enumerate adapters (capture the RTX 5090 name), toggle the debug layer, and rerun the example runner to collect the new diagnostics.
 
 # Packaging
 - Run `python tools/package_wheel.py` to produce a release-mode build and wheel.
+
+## Known Limitations
+- Despite the local NVIDIA GeForce RTX 5090, offscreen D3D11 initialisation still returns `bad allocation`. Capture adapter selection, `D3D11CreateDevice` HRESULTs, and debug-layer messages before drawing conclusions; once diagnostics are in hand, rerun the example runner and NDI validation on the same workstation.
+- The new example runner `python/examples/run_rive_ndi.py` surfaces constructor failures via `ValueError`; expect this until GPU access is available.
 
 ## Workflow Expectations
 - Analyse existing helpers (e.g., `modules/yup_graphics/`, `modules/yup_core/`) before introducing new abstractions; reuse utilities wherever feasible.

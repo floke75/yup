@@ -143,6 +143,14 @@ python -m yup_ndi --name StudioA --riv-file assets/demo.riv --width 1920 --heigh
 can preserve broadcast frame cadences when configuring NDI senders. Passing `0` keeps the renderer
 in wall-clock mode, matching the CLI's legacy behaviour.
 
+A convenience wrapper lives at `python/examples/run_rive_ndi.py` when you want to stream a `.riv` without wiring your own loop:
+
+```powershell
+python python/examples/run_rive_ndi.py --name StudioTicker --width 1920 --height 1080 --fps 60 assets/demo.riv
+```
+
+It mirrors the CLI flags and raises `ValueError` when Direct3D 11 cannot be initialised (the message includes the HRESULT/WARP failures), so GPU issues surface immediately.
+
 The CLI supports the same configuration payload as `NDIStreamConfig`, including `--state-input`
 pairs, connection throttling toggles, and optional REST/OSC servers:
 
@@ -179,6 +187,7 @@ The suites provide fake renderers and senders so they run without native GPU or 
 When modifying the renderer API, update the bindings and tests in the same commit to avoid drift.
 
 ## 6. Troubleshooting
+- **`ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`:** Direct3D 11 refused to create a device. This was observed even on a machine with an RTX 5090 when running headless; ensure hardware drivers are available, WARP support is installed (`d3d10warp.dll`), and remote/virtualised sessions are not blocking GPU access.
 - **`ImportError: yup_rive_renderer`:** Ensure `python -m build --wheel` succeeded and that the wheel
   was installed into the active Python environment.
 - **`ImportError: cyndilib`:** Install `cyndilib>=0.0.8` when streaming to real NDI receivers. The

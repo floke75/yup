@@ -1,3 +1,5 @@
+#pragma once
+
 /*
   ==============================================================================
 
@@ -457,3 +459,4 @@ YUP_END_IGNORE_WARNINGS_MSVC
 #if defined(YUP_DLL_BUILD) || defined(YUP_DLL)
 YUP_IGNORE_MSVC (4251)
 #endif
+

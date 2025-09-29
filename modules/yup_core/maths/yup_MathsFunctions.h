@@ -1,3 +1,5 @@
+#pragma once
+
 /*
   ==============================================================================
 
@@ -1014,3 +1016,4 @@ constexpr auto toUnderlyingType (T t) -> std::enable_if_t<std::is_enum_v<T>, std
 }
 
 } // namespace yup
+

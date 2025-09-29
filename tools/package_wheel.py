@@ -54,6 +54,11 @@ def configure_project(source_dir: Path, build_dir: Path) -> None:
         "-B",
         str(build_dir),
         "-DCMAKE_BUILD_TYPE=Release",
+        "-DYUP_BUILD_WHEEL=ON",
+        "-DYUP_BUILD_TESTS=OFF",
+        "-DYUP_BUILD_EXAMPLES=OFF",
+        "-DYUP_ENABLE_AUDIO_MODULES=OFF",
+        "-DYUP_EXPORT_MODULES=OFF",
     ]
 
     if sys.platform.startswith("win"):

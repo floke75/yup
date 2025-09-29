@@ -45,6 +45,8 @@ tests that cover the binding, orchestrator, and CLI layers. Use
 to adjust the workflow. Point `-PythonExecutable` at a specific interpreter if
 `py -3.11` is unavailable.
 
+Behind the scenes the helper opts into `YUP_BUILD_WHEEL=ON` while turning off `YUP_EXPORT_MODULES` so only the Python-focused targets are configured. That combination ensures the renderer module drops its `.pyd` next to `setup.py`, ready for packaging. Make sure the interpreter that runs `tools/package_wheel.py` has `python -m build` available (the bootstrap installs it inside `.venv`).
+
 ## 1. Prepare the environment
 
 1. Launch a **x64 Native Tools Command Prompt for VS 2022** so that MSVC, the Windows SDK,
@@ -81,7 +83,16 @@ to adjust the workflow. Point `-PythonExecutable` at a specific interpreter if
 
 ## 2. Configure and build the native renderer
 
-1. Configure the project with Visual Studio 2022 generators. Disable the legacy audio
+1. Configure the project with Visual Studio 2022 generators.
+> [!NOTE]
+> Use **Visual Studio 2022 (v143 toolset)**. Earlier VS releases (2019 and below) are no longer validated for this branch and may fail to compile the modern C++17/C++20 configuration expected by the renderer and Python bindings.
+
+> [!TIP]
+> When building inside a virtual environment, pass `-DPython_EXECUTABLE=%CD%\.venv\Scripts\python.exe` during the CMake
+> configure step so the renderer and bindings target the same interpreter you use to run tests. The system Python
+> may otherwise be selected (for example, Python 3.13), producing wheels that fail to import under Python 3.11.
+
+Disable the legacy audio
    modules to shorten build times while keeping the renderer, bindings, and tests available.
    Run the command from the repository root (next to `CMakeLists.txt`):
 
@@ -163,6 +174,8 @@ with the same paths listed in the recipe.
 4. Archive the build artefacts and documentation so that downstream consumers receive the
    renderer, wheel, and guidance in a single package.
 
+The wheel now ships two native entry points: `yup` (the monolithic extension exposed through `setuptools.Extension`) and the renderer-specific `yup_rive_renderer` which is copied in as packaged data. Consumers can either `import yup` for the legacy surface or `import yup_rive_renderer` for the focused Direct3D 11 binding that feeds NDI.
+
 ## 6. Continuous integration notes
 
 - The Windows smoke tests expect GPU-less environments and operate entirely through the
@@ -173,6 +186,12 @@ with the same paths listed in the recipe.
   configuration and dependency installation costs.
 
 ## Troubleshooting
+
+- **`python tools/package_wheel.py` fails with `No module named build`** - Activate the project's virtual environment before running the helper so the `build` package is on `PATH`. If you prefer a global interpreter, install it manually (`python -m pip install build`) or call the script through `py -3.11 -m tools.package_wheel`.
+
+- **`stubgen` is not on PATH during wheel builds** - Type stubs are generated automatically now that the renderer artefacts land beside `setup.py`. Install `mypy` in the active environment or suppress stub generation with `set YUP_GENERATE_PYI=0` when diagnostics outweigh the benefits.
+
+- **Release build emits only `.lib` artefacts** - Confirm that CMake is configured with `-DYUP_BUILD_WHEEL=ON` and `-DYUP_EXPORT_MODULES=OFF`. Those switches restrict the graph to the Python-facing modules and force `yup_rive_renderer.pyd` into the packaging directory.
 
 - **`'sleep': identifier not found` during the audio device build** – The Windows toolchain
   does not provide the POSIX `sleep()` symbol, so any backend that still calls it will fail

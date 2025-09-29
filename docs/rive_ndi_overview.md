@@ -82,6 +82,28 @@ exclude audio modules entirely.
 Both suites rely on in-repo fakes, so they run without a GPU or NDI runtime. Use them after any change
 that touches the renderer interface, binding layer, or orchestrator.
 
+
+## Example Stream Runner
+A ready-to-run helper script lives at `python/examples/run_rive_ndi.py`. It wraps the orchestrator so you can
+stream a `.riv` file without wiring your own pump loop:
+
+```powershell
+python python/examples/run_rive_ndi.py \ 
+    --name StudioTicker \ 
+    --width 1920 --height 1080 \ 
+    --fps 60000/1001 \ 
+    --animation Intro assets/graphics/demo.riv
+```
+
+Use `Ctrl+C` to stop the loop. The script surfaces the same options as the CLI (`--artboard`,
+`--state-machine`, `--ndi-groups`) and raises a `ValueError` when Direct3D initialisation fails so the
+command-line output captures driver/HRESULT details.
+
+If you see `ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`, Windows could not create
+a D3D11 device (hardware and WARP). Check that the machine exposes a D3D11 driver, that remote sessions are
+not blocking graphics initialisation, and that the `d3dcompiler_47.dll` redistributable is installed.
+Even on systems equipped with modern GPUs (the local workstation carries an RTX 5090) this error can persist when running headless or inside a constrained remote session, so inspect device creation flags and adapter selection if drivers are already present.
+
 ## Next Steps for Contributors
 - Continue refining documentation and tooling so Windows developers can provision environments quickly.
 - Plan integration smoke tests that combine the real renderer with `cyndilib` senders for manual NDI

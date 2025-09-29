@@ -18,6 +18,19 @@ project_name = "yup"
 root_dir = os.path.dirname(os.path.abspath(__file__))
 
 
+native_artifact_suffixes = (".pyd", ".so", ".dylib")
+native_artifacts = []
+for suffix in native_artifact_suffixes:
+    candidate = os.path.join(root_dir, f"yup_rive_renderer{suffix}")
+    if os.path.isfile(candidate):
+        native_artifacts.append(candidate)
+
+if native_artifacts:
+    native_artifact_targets = [os.path.relpath(path, root_dir) for path in native_artifacts]
+else:
+    native_artifact_targets = []
+
+
 def get_environment_option(typeClass, name, default=None):
     try:
         return typeClass(os.environ.get(name, default))
@@ -87,7 +100,9 @@ class CMakeBuildExtension(build_ext):
     build_with_lto = get_environment_option(int, "YUP_ENABLE_LTO", 0)
     build_osx_architectures = get_environment_option(str, "YUP_OSX_ARCHITECTURES", "arm64")
     build_osx_deployment_target = get_environment_option(str, "YUP_OSX_DEPLOYMENT_TARGET", "11.0")
-    build_enable_audio_modules = get_environment_option(int, "YUP_ENABLE_AUDIO_MODULES", 1)
+    build_enable_audio_modules = get_environment_option(int, "YUP_ENABLE_AUDIO_MODULES", 0)
+
+    build_generate_pyi = get_environment_option(int, "YUP_GENERATE_PYI", 1)
 
     def build_extension(self, ext):
         log.info("building with cmake")
@@ -121,6 +136,11 @@ class CMakeBuildExtension(build_ext):
             f"-DYUP_ENABLE_AUDIO_MODULES:BOOL={'ON' if self.build_enable_audio_modules else 'OFF'}",
         ]
 
+        cmake_args += [
+            f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY:PATH={output_path}",
+            f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_{config.upper()}:PATH={output_path}"
+        ]
+
         if platform.system() == 'Darwin':
             cmake_args += [
                 f"-DCMAKE_OSX_ARCHITECTURES:STRING={self.build_osx_architectures}",
@@ -145,10 +165,27 @@ class CMakeBuildExtension(build_ext):
                 build_command += ["--", f"-j{os.cpu_count()}"]
             self.spawn(build_command)
 
+            built_extension = None
+            for candidate in output_path.rglob(f"{project_name}.pyd"):
+                built_extension = candidate
+                break
+            if built_extension is None:
+                for candidate in output_path.rglob(f"{project_name}.so"):
+                    built_extension = candidate
+                    break
+            if built_extension is not None:
+                destination = pathlib.Path(self.get_ext_fullpath(ext.name)).absolute()
+                if built_extension != destination:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    if destination.exists():
+                        destination.unlink()
+                    shutil.move(str(built_extension), str(destination))
+
         finally:
             os.chdir(str(cwd))
 
-        self.generate_pyi(cwd)
+        if not getattr(self, "dry_run", False) and self.build_generate_pyi:
+            self.generate_pyi(str(output_path))
 
     def generate_pyi(self, cwd):
         log.info("generating pyi files")
@@ -159,7 +196,7 @@ class CMakeBuildExtension(build_ext):
                 library = m
                 break
 
-        if library is None:
+        if library is None or not os.path.exists(library):
             return
 
         library_dir = os.path.dirname(library)
@@ -257,6 +294,7 @@ setuptools.setup(
     include_package_data=True,
     cmdclass={"build_ext": CMakeBuildExtension, "install_scripts": CustomInstallScripts},
     ext_modules=[CMakeExtension(project_name)],
+    data_files=[("", native_artifact_targets)] if native_artifact_targets else [],
     zip_safe=False,
     platforms=["macosx", "win32", "linux"],
     python_requires=">=3.11",

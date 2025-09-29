@@ -24,9 +24,7 @@
 #define YUP_PYTHON_INCLUDE_PYBIND11_NUMPY
 #include "modules/yup_python/utilities/yup_PyBind11Includes.h"
 
-#include "modules/yup_core/files/yup_File.h"
-#include "modules/yup_core/misc/yup_Result.h"
-#include "modules/yup_core/containers/yup_Span.h"
+#include "modules/yup_core/yup_core.h"
 #include "modules/yup_gui/artboard/yup_RiveOffscreenRenderer.h"
 
 #include <cstring>
@@ -72,21 +70,12 @@ namespace
 
         if (! frame || frame->empty() || renderer.getWidth() <= 0 || renderer.getHeight() <= 0)
         {
-            static uint8 dummy = 0;
-
+            static const uint8 dummy = 0;
             return py::memoryview::from_buffer (
                 &dummy,
-                sizeof (uint8),
-                "B",
                 std::vector<py::ssize_t> { 0 },
-                std::vector<py::ssize_t> { 1 },
-                true);
+                std::vector<py::ssize_t> { 1 });
         }
-
-        auto* data = const_cast<uint8*> (frame->data());
-        const auto width = static_cast<py::ssize_t> (renderer.getWidth());
-        const auto height = static_cast<py::ssize_t> (renderer.getHeight());
-        const auto stride = static_cast<py::ssize_t> (renderer.getRowStride());
 
         auto capsule = py::capsule (
             new std::shared_ptr<const std::vector<uint8>> (frame),
@@ -95,14 +84,17 @@ namespace
                 delete reinterpret_cast<std::shared_ptr<const std::vector<uint8>>*> (pointer);
             });
 
-        return py::memoryview::from_buffer (
-            data,
-            sizeof (uint8),
-            "B",
+        const auto width = static_cast<py::ssize_t> (renderer.getWidth());
+        const auto height = static_cast<py::ssize_t> (renderer.getHeight());
+        const auto stride = static_cast<py::ssize_t> (renderer.getRowStride());
+
+        auto view = py::memoryview::from_buffer (
+            static_cast<const uint8*> (frame->data()),
             std::vector<py::ssize_t> { height, width, 4 },
-            std::vector<py::ssize_t> { stride, 4, 1 },
-            true,
-            capsule);
+            std::vector<py::ssize_t> { stride, 4, 1 });
+
+        view.attr ("base") = capsule;
+        return view;
     }
 
     std::vector<uint8> copyBuffer (py::buffer buffer)
@@ -143,7 +135,31 @@ namespace
 
         renderer
             .def (
-                py::init<int, int, std::size_t>(),
+                py::init([] (int width, int height, std::size_t stagingBufferCount)
+                {
+                    try
+                    {
+                        auto instance = std::make_unique<RiveOffscreenRenderer> (width, height, stagingBufferCount);
+                        if (! instance->isValid())
+                        {
+                            const auto error = instance->getLastError().toStdString();
+                            const auto message = error.empty()
+                                ? std::string ("Failed to initialise RiveOffscreenRenderer")
+                                : error;
+                            throw py::value_error (message);
+                        }
+
+                        return instance;
+                    }
+                    catch (const std::exception& exc)
+                    {
+                        throw py::value_error (std::string ("Failed to initialise RiveOffscreenRenderer: ") + exc.what());
+                    }
+                    catch (...)
+                    {
+                        throw py::value_error ("Failed to initialise RiveOffscreenRenderer: unknown error");
+                    }
+                }),
                 "width"_a,
                 "height"_a,
                 "staging_buffer_count"_a = std::size_t { 1 },
@@ -171,9 +187,7 @@ namespace
                     auto bytes = copyBuffer (std::move (buffer));
                     const auto artboardName = artboard ? String (*artboard) : String();
                     py::gil_scoped_release release;
-                    auto result = self.loadFromBytes (
-                        Span<const uint8> (bytes.data(), bytes.size()),
-                        artboardName);
+                    auto result = self.loadFromBytes (bytes, artboardName);
                     handleResult (result);
                 },
                 "data"_a,
@@ -210,7 +224,10 @@ namespace
                 "Selects an artboard by name.")
             .def (
                 "get_active_artboard",
-                &RiveOffscreenRenderer::getActiveArtboardName,
+                [] (const RiveOffscreenRenderer& self)
+                {
+                    return self.getActiveArtboardName().toStdString();
+                },
                 "Returns the name of the current artboard, or an empty string if none is active.")
             .def (
                 "play_animation",
@@ -303,7 +320,10 @@ namespace
                 "Returns a read-only memoryview that references the renderer's BGRA frame without copying.")
             .def (
                 "get_last_error",
-                &RiveOffscreenRenderer::getLastError,
+                [] (const RiveOffscreenRenderer& self)
+                {
+                    return self.getLastError().toStdString();
+                },
                 "Returns the last error message reported by the renderer.");
     }
 }

@@ -62,7 +62,7 @@ include:
   managed virtual environment.
 
 ### Prerequisites
-- Windows 10/11 with Visual Studio 2022 (or another C++20-compatible compiler) and the Windows SDK installed.
+- Windows 10/11 with Visual Studio 2022 (v143 toolset) (or another C++20-compatible compiler) and the Windows SDK installed.
 - Python 3.10+ with `pip`, `cmake`, and `ninja` available.
 - (Optional) [NDI Tools](https://ndi.video/tools/) or another NDI receiver for end-to-end testing.
 - (Optional) `cyndilib>=0.0.8` when you intend to publish live NDI streams.
@@ -96,6 +96,10 @@ just python_wheel
 The recipe invokes `python -m build --wheel`, reinstalls the freshly built wheel, and executes the
 Python unit tests. To skip installation and testing, run `python -m build --wheel` from the `python`
 directory instead.
+
+The resulting distribution exposes the monolithic `yup` extension (for legacy module coverage) and
+the focused `yup_rive_renderer` binding that powers the NDI orchestration layer. Downstream projects can
+`import yup` for the broader API surface or `import yup_rive_renderer` when they only need the renderer-to-NDI bridge.
 
 > **Note:** The legacy `yup` core/events/graphics bindings still require the compiled native module.
 > The corresponding test suites now skip automatically when the extension is unavailable so that
@@ -138,6 +142,14 @@ state-machine inputs).
 > `(numerator, denominator)` tuple) to lock the stream to a deterministic cadence. Supply `0` or `None`
 > to follow real time. Invalid tuples raise explicit errors so configuration mistakes are caught early.
 
+A convenience runner lives at `python/examples/run_rive_ndi.py` when you want to stream a `.riv` without writing a custom harness:
+
+```powershell
+python python/examples/run_rive_ndi.py --name StudioTicker --width 1920 --height 1080 --fps 60 assets/demo.riv
+```
+
+The helper mirrors the CLI flags and raises a `ValueError` when Direct3D 11 cannot be initialised (the message surfaces the HRESULT or WARP fallback failures) so you can troubleshoot driver issues quickly. If you hit this on hardware that already has a capable GPU (the local lab box runs an NVIDIA GeForce RTX 5090), treat it as an offscreen/remote-session constraint and review the D3D11 device creation flags instead of assuming the driver stack is missing.
+
 ## Development Guidelines
 - Follow Allman brace style and the conventions outlined in `CLAUDE.md`.
 - Keep renderer code modular and favour RAII for GPU resources.
@@ -161,3 +173,4 @@ implementation. Tests and documentation updates are expected alongside feature w
 
 ## License
 Distributed under the ISC License. See [`LICENSE`](./LICENSE) for details.
+
