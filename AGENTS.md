@@ -24,8 +24,8 @@ You are extending YUP to deliver a Windows-focused pipeline that renders Rive (`
   - `README.md` – quickstart build/test recipes and API overview.
   - `docs/rive_ndi_overview.md` – Windows-focused walkthrough of the renderer → NDI flow.
   - `docs/Rive to NDI Guide.md` – detailed step-by-step orchestration and tooling guide.
-  - `docs/Windows Build and Packaging.md` – MSVC toolchain, packaging, and release notes.
-  - `docs/BUILD_WINDOWS.md` – legacy but still-referenced Windows build primer.
+  - `docs/Windows Build and Packaging.md` – authoritative MSVC toolchain, packaging, and troubleshooting workflow. Keep the quickstart aligned with `tools/install_windows.ps1`.
+  - `docs/BUILD_WINDOWS.md` – concise Windows onboarding primer that mirrors the packaging doc and highlights helper recipes.
   - `docs/Building Plugins.md` and `docs/Building Standalone.md` – ancillary build targets.
   - `docs/YUP Module Format.md` – module metadata expectations.
   - `standalone/rive_frontend/` – temporary browser control panel; keep copy updates mirrored in the minified builds under `docs/demos/` and ensure the generated payload schema matches `python/yup_ndi/orchestrator.py`.

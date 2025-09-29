@@ -69,9 +69,11 @@ include:
 
 ### Clone the Repository
 ```powershell
-git clone https://github.com/kunitoki/yup.git
+git clone --recurse-submodules https://github.com/kunitoki/yup.git
 cd yup
 ```
+
+> **Already cloned?** Pull in submodules with `git submodule update --init --recursive` before configuring CMake.
 
 ### Configure & Build Native Targets (Visual Studio)
 Generate a project that focuses on the renderer, bindings, and tests:
