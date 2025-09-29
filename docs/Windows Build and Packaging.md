@@ -1,9 +1,23 @@
 # Windows Build and Packaging Workflow
 
-This guide captures the end-to-end workflow for building the Direct3D11 Rive renderer,
+This guide captures the end-to-end workflow for building the Direct3D 11 Rive renderer,
 packaging the Python bindings, and validating the NDI orchestration path on Windows 11.
-The steps assume Visual Studio 2022 (or another C++20-compatible compiler), Python 3.11+,
-and the Windows 10 or 11 SDK are installed.
+Follow it when you want repeatable "clone → build → smoke test" instructions that match
+the latest toolchain and script automation.
+
+## Before you start
+
+Make sure these prerequisites are installed **before** you open the developer prompt:
+
+| Requirement | Notes |
+| --- | --- |
+| Visual Studio 2022 (Desktop development with C++) | Install the workload together with the Windows 10/11 SDK, MSVC v143 build tools, CMake tools for Windows, and the ATL headers. |
+| CMake 3.28+ and Ninja 1.11+ | Bundled versions in Visual Studio are often older. Install current builds from [cmake.org](https://cmake.org/download/) and [ninja-build.org](https://github.com/ninja-build/ninja/releases). |
+| Python 3.11 (or newer 3.10+) | Check **Add python.exe to PATH** during setup. Verify with `python --version`. |
+| Git for Windows | Required when cloning the repository with submodules. |
+| (Optional) [`just`](https://github.com/casey/just) 1.21+ | The docs reference recipes such as `just python_wheel`. Install from the [GitHub releases](https://github.com/casey/just/releases), via `winget install --id Casey.Just`, or `cargo install just`. |
+| (Optional) `cyndilib==0.0.8` | Enables live NDI transmission smoke tests. The helper script can install it for you. |
+| (Optional) `vcpkg` with `libjpeg-turbo:x64-windows` | Required only when decoding JPEG textures in renderer smoke tests. |
 
 > [!IMPORTANT]
 > This branch intentionally supports **desktop Windows builds only**. The CMake tooling now
@@ -15,7 +29,7 @@ and the Windows 10 or 11 SDK are installed.
 ## 0. Automated bootstrap (optional)
 
 When you want a turnkey setup, run the PowerShell helper from a VS 2022 developer
-prompt:
+prompt after cloning the repository (`git clone --recurse-submodules https://github.com/kunitoki/yup.git`):
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -28,12 +42,22 @@ specified configuration (Release by default), produces the Python wheel,
 reinstalls it into the virtual environment, and runs the renderer/NDI smoke
 tests that cover the binding, orchestrator, and CLI layers. Use
 `-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or `-InstallCyndilib`
-to adjust the workflow.
+to adjust the workflow. Point `-PythonExecutable` at a specific interpreter if
+`py -3.11` is unavailable.
 
 ## 1. Prepare the environment
 
 1. Launch a **x64 Native Tools Command Prompt for VS 2022** so that MSVC, the Windows SDK,
-   and CMake are all on the `PATH`.
+   and CMake are all on the `PATH`. Confirm the key tools respond as expected:
+
+   ```powershell
+   cl
+   cmake --version
+   ninja --version
+   python --version
+   just --version  # optional
+   ```
+
 2. Install Python dependencies into a clean virtual environment:
 
    ```powershell
@@ -49,7 +73,7 @@ to adjust the workflow.
 
 4. Install the JPEG raster dependency if you plan to decode `.jpeg` assets. The build now
    consumes `libjpeg-turbo`'s CMake config automatically, so installing the vcpkg port is
-   sufficient:
+   sufficient. Run this only when `vcpkg` is configured on your machine:
 
    ```powershell
    vcpkg install libjpeg-turbo:x64-windows
@@ -59,6 +83,7 @@ to adjust the workflow.
 
 1. Configure the project with Visual Studio 2022 generators. Disable the legacy audio
    modules to shorten build times while keeping the renderer, bindings, and tests available.
+   Run the command from the repository root (next to `CMakeLists.txt`):
 
    ```powershell
    cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
@@ -89,7 +114,8 @@ to adjust the workflow.
 ## 3. Build and install the Python wheel
 
 1. From the repository root, build the wheel, reinstall it into the active virtual
-   environment, and run the Python unit tests:
+   environment, and run the Python unit tests. Install `just` if you want to use the
+   convenience recipe (or invoke the underlying commands manually):
 
    ```powershell
    just python_wheel
@@ -120,7 +146,8 @@ just python_smoke
 
 The command executes the targeted smoke tests with `-q` so that any failures surface
 immediately. The tests ship with fake renderer/sender implementations, so they succeed even
-when GPU or NDI runtimes are absent.
+when GPU or NDI runtimes are absent. To run the tests manually, invoke `python -m pytest`
+with the same paths listed in the recipe.
 
 ## 5. Package distributables
 
@@ -149,3 +176,7 @@ when GPU or NDI runtimes are absent.
   to compile. Replace raw `sleep()`/`Sleep()` usages in platform code (e.g. the DirectSound
   backend) with `Thread::sleep(milliseconds)` so the implementation maps cleanly onto the
   Windows API.
+
+- **`just` is not recognized** – Install the utility via `winget install --id Casey.Just` or
+  download the latest release from GitHub and add it to `PATH`. Alternatively, run the
+  equivalent `python -m build`/`python -m pytest` commands directly.
