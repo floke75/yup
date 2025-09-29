@@ -147,39 +147,58 @@ source_group (TREE ${CMAKE_CURRENT_LIST_DIR}/ FILES ${sources})
 target_sources (${target_name}_shared PUBLIC ${sources})
 ```
 
-## Building for Different Platforms
+## Building on Windows
 
-### macOS
+Windows 11 with Visual Studio 2022 is the supported environment for producing YUP-based plugins. The steps below assume you are running from an **x64 Native Tools Command Prompt for VS 2022** with CMake 3.28 or newer installed.
+
+### Prerequisites
+
+- Visual Studio 2022 with the Desktop development with C++ workload and the latest Windows 10/11 SDK.
+- CMake 3.28+ and Ninja (optional, but recommended for faster incremental builds).
+- Git access to clone your plugin repository and YUP as a submodule or FetchContent dependency.
+
+### Configure and Build
+
+```powershell
+# From the root of your plugin project
+cmake -G "Visual Studio 17 2022" -A x64 `
+  -B build `
+  -DYUP_ENABLE_TESTS=OFF `
+  -DYUP_ENABLE_EXAMPLES=OFF
+
+cmake --build build --config Release
+```
+
+> 💡 Tip: The repository ships a helper script at `tools/install_windows.ps1` that can provision dependencies and run the same CMake generation flow. Use it when bootstrapping a fresh workstation.
+
+### Packaging Artifacts
+
+Visual Studio produces the plugin binaries inside `build/Release`. Copy the resulting `.vst3` or `.clap` bundles into the directories listed below, or adapt the install step of your CI pipeline to publish them.
+
+## Plugin Installation on Windows
+
+- **VST3**: `C:\\Program Files\\Common Files\\VST3\\`
+- **CLAP**: `C:\\Program Files\\Common Files\\CLAP\\`
+
+Ensure the destination folders already exist and that you are running an elevated shell when writing to `%ProgramFiles%`. Some hosts also scan `%COMMONPROGRAMFILES%\VST3` automatically—verify your DAW's plugin search paths if the build does not appear.
+
+> ⚠️ **Legacy reference only:** macOS and Linux installation paths from older branches remain `~/Library/Audio/Plug-Ins/(VST3|CLAP)/` and `~/.vst3` / `~/.clap` respectively. These flows are not supported or tested on the current Windows-focused branch.
+
+## Legacy Appendix: Non-Windows Build Commands (Unsupported)
+
+The commands below are retained for historical context. They are **not** validated in this branch and should be treated as references when porting the project back to macOS or Linux.
+
+### macOS (legacy)
 ```bash
 cmake -G "Xcode" . -B build -DYUP_ENABLE_TESTS=OFF -DYUP_ENABLE_EXAMPLES=OFF
 cmake --build build --config Release
 ```
 
-### Windows
-```bash
-cmake -G "Visual Studio 17 2022" -A x64 . -B build -DYUP_ENABLE_TESTS=OFF -DYUP_ENABLE_EXAMPLES=OFF
-cmake --build build --config Release
-```
-
-### Linux
+### Linux (legacy)
 ```bash
 cmake -G "Ninja" . -B build -DYUP_ENABLE_TESTS=OFF -DYUP_ENABLE_EXAMPLES=OFF
 cmake --build build --config Release
 ```
-
-## Plugin Installation
-
-### macOS
-- VST3: `~/Library/Audio/Plug-Ins/VST3/`
-- CLAP: `~/Library/Audio/Plug-Ins/CLAP/`
-
-### Windows
-- VST3: `C:\Program Files\Common Files\VST3\`
-- CLAP: `C:\Program Files\Common Files\CLAP\`
-
-### Linux
-- VST3: `~/.vst3/`
-- CLAP: `~/.clap/`
 
 ## Best Practices
 
