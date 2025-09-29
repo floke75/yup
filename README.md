@@ -51,7 +51,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 The script provisions a `.venv` virtual environment, installs build requirements,
 configures the Visual Studio solution with audio modules disabled, compiles the
 selected configuration (Release by default), builds and reinstalls the Python
-wheel, and finishes by exercising the renderer/NDI smoke tests. Useful flags
+wheel, and finishes by exercising the renderer/NDI smoke tests covering the
+binding, orchestrator, and CLI layers. Useful flags
 include:
 
 - `-Configuration Debug` – build the Debug configuration instead of Release.
@@ -99,7 +100,7 @@ directory instead.
 > documentation-only environments can execute the remaining Python checks.
 
 ### Run Renderer ↔ NDI Smoke Tests
-Targeted smoke tests verify zero-copy frame access and orchestrator behaviour:
+Targeted smoke tests verify zero-copy frame access, orchestrator behaviour, and CLI parsing:
 ```powershell
 just python_smoke
 ```

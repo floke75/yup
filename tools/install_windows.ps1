@@ -238,10 +238,11 @@ try {
     & $venvPython -m pip install --force-reinstall $wheel.FullName
 
     if (-not $SkipSmokeTests) {
-        Write-Section "Running renderer and NDI smoke tests"
+        Write-Section "Running renderer, orchestrator, and CLI smoke tests"
         & $venvPython -m pytest -q `
             tests/test_yup_rive_renderer/test_binding_interface.py `
-            tests/test_yup_ndi/test_orchestrator.py
+            tests/test_yup_ndi/test_orchestrator.py `
+            tests/test_yup_ndi/test_cli.py
     } else {
         Write-Host "Smoke tests skipped." -ForegroundColor Yellow
     }

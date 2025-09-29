@@ -26,8 +26,9 @@ The script creates (or reuses) `.venv`, installs build/test dependencies,
 configures the Visual Studio solution with audio modules disabled, builds the
 specified configuration (Release by default), produces the Python wheel,
 reinstalls it into the virtual environment, and runs the renderer/NDI smoke
-tests. Use `-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or
-`-InstallCyndilib` to adjust the workflow.
+tests that cover the binding, orchestrator, and CLI layers. Use
+`-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or `-InstallCyndilib`
+to adjust the workflow.
 
 ## 1. Prepare the environment
 
@@ -108,9 +109,10 @@ tests. Use `-Configuration Debug`, `-SkipWheel`, `-SkipSmokeTests`, or
 
 ## 4. Run renderer and NDI smoke tests
 
-The `python/tests/test_yup_rive_renderer` and `python/tests/test_yup_ndi` suites validate
-that the bindings expose zero-copy frame access and that the orchestrator can marshal
-frames into NDI senders. A convenient `just` recipe is available:
+The focused smoke set runs `python/tests/test_yup_rive_renderer/test_binding_interface.py`,
+`python/tests/test_yup_ndi/test_orchestrator.py`, and
+`python/tests/test_yup_ndi/test_cli.py` to validate zero-copy frame access, orchestrator
+NDI marshalling, and CLI parsing. A convenient `just` recipe is available:
 
 ```powershell
 just python_smoke
