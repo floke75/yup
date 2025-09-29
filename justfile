@@ -115,3 +115,4 @@ python_test *TEST_OPTS:
 python_smoke:
   @just python_test tests/test_yup_rive_renderer/test_binding_interface.py -q
   @just python_test tests/test_yup_ndi/test_orchestrator.py -q
+  @just python_test tests/test_yup_ndi/test_cli.py -q
