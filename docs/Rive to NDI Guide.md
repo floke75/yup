@@ -70,6 +70,7 @@ format.  This allows `memoryview.cast("B")` and NumPy consumers to recognise the
 packed BGRA data and preserves zero-copy behaviour when moving between Python versions.  The
 view can be cast to a flat byte buffer or reshaped into `(height, width, 4)` arrays as needed.
 `get_frame_bytes()` remains available when a defensive copy is required.
+Call `set_presentation_enabled(True)` whenever you need the renderer to mirror frames in a troubleshooting window; the flag can be toggled on the fly to validate swapchain output without disturbing the offscreen readback path.
 
 ## 4. Publish Frames Over NDI
 The `yup_ndi` package orchestrates renderers and senders. It accepts factories for dependency
@@ -92,13 +93,15 @@ with NDIOrchestrator() as orchestrator:
             frame_rate=Fraction(60000, 1001),
             ndi_groups="ControlRoom",
             metadata={"ndi": {"comment": "Rive playback"}},
-            renderer_options={"staging_buffer_count": 3},
+            renderer_options={"staging_buffer_count": 3, "enable_presentation": False},
         )
     )
 
     for _ in range(600):
         orchestrator.advance_all(1 / 60)
 ```
+`renderer_options["enable_presentation"]` mirrors the renderer's presentation toggle, allowing you to open a troubleshooting window alongside the NDI feed when diagnosing GPU or adapter issues.
+
 
 Use `apply_stream_control()` to pause/resume playback, select artboards, or set state-machine inputs
 at runtime. Register custom control handlers via `register_control_handler()` if you expose REST/OSC
@@ -148,12 +151,14 @@ A convenience wrapper lives at `python/examples/run_rive_ndi.py` when you want t
 ```powershell
 python python/examples/run_rive_ndi.py --name StudioTicker --width 1920 --height 1080 --fps 60 assets/demo.riv
 ```
+Add `--present-preview` to mirror frames locally while chasing GPU/adapter issues.
 
 It mirrors the CLI flags and raises `ValueError` when Direct3D 11 cannot be initialised (the message includes the HRESULT/WARP failures), so GPU issues surface immediately.
 
 The CLI supports the same configuration payload as `NDIStreamConfig`, including `--state-input`
 pairs, connection throttling toggles, and optional REST/OSC servers:
 
+- `--present-preview` mirrors the renderer output in a local window so you can validate frames and adapter selection while the stream continues publishing offscreen frames to NDI.
 - `--rest-port` spins up a Flask server that exposes `/streams`, `/streams/<name>`,
   and `/streams/<name>/control` endpoints for remote automation.
 - `--osc-port` enables an OSC listener (requires `python-osc>=1.8`) that accepts
@@ -187,7 +192,7 @@ The suites provide fake renderers and senders so they run without native GPU or 
 When modifying the renderer API, update the bindings and tests in the same commit to avoid drift.
 
 ## 6. Troubleshooting
-- **`ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`:** Direct3D 11 refused to create a device. This was observed even on a machine with an RTX 5090 when running headless; ensure hardware drivers are available, WARP support is installed (`d3d10warp.dll`), and remote/virtualised sessions are not blocking GPU access.
+- **`ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`:** Direct3D 11 refused to create a device. Adapter descriptions, feature levels, and HRESULT codes are now emitted during initialisation, so check the log to confirm which driver path failed before retracing your steps. We see this even on the primary Windows 11 workstation (RTX 5090, active displays), so focus on offscreen device policies, staging-buffer pressure, and WARP availability (`d3d10warp.dll`) before assuming the host is headless or missing GPU drivers.
 - **`ImportError: yup_rive_renderer`:** Ensure `python -m build --wheel` succeeded and that the wheel
   was installed into the active Python environment.
 - **`ImportError: cyndilib`:** Install `cyndilib>=0.0.8` when streaming to real NDI receivers. The

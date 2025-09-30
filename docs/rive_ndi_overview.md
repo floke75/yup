@@ -15,6 +15,9 @@ forwards frames to `cyndilib` senders, and provides runtime control hooks.
 - **Production-ready failure handling:** The renderer now validates requested dimensions, falls back to
   WARP when hardware devices refuse to initialise, and propagates descriptive errors (including
   HRESULT codes) through the Python bindings and orchestrator so operators see actionable diagnostics.
+- **Interactive troubleshooting mode:** The renderer can mirror frames into a small diagnostic window
+  on demand. Adapter names, feature levels, and HRESULTs are logged whenever device creation is attempted,
+  making it easier to separate driver issues from offscreen device policies before shipping a stream on the (non-headless) RTX 5090 lab workstation.
 - **Focused test coverage:** GoogleTests validate renderer invariants while `pytest` suites exercise
 the binding and orchestrator behaviour using fake senders/renderers so CI does not require GPU or NDI
 DLLs.
@@ -43,7 +46,8 @@ frames align to a consistent monotonic origin. The CLI frame pump wires this up 
 emitting the first frame.
 
 The orchestrator also exposes a `renderer_options` dictionary so deployments can request deeper staging
-queues when buffering bursts or multiple consumers is preferable to the lowest possible latency.
+queues when buffering bursts or multiple consumers is preferable to the lowest possible latency, or enable
+the troubleshooting presentation window (`enable_presentation=True`) when GPU diagnostics need a visual check.
 
 The pipeline is designed so that Python orchestrates playback while the renderer handles all GPU
 work. Any API adjustment in the renderer must be mirrored in the binding and orchestrator to keep the
@@ -94,6 +98,7 @@ python python/examples/run_rive_ndi.py \
     --fps 60000/1001 \ 
     --animation Intro assets/graphics/demo.riv
 ```
+Add `--present-preview` to mirror frames locally while debugging GPU/adapter selection.
 
 Use `Ctrl+C` to stop the loop. The script surfaces the same options as the CLI (`--artboard`,
 `--state-machine`, `--ndi-groups`) and raises a `ValueError` when Direct3D initialisation fails so the
@@ -102,7 +107,7 @@ command-line output captures driver/HRESULT details.
 If you see `ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`, Windows could not create
 a D3D11 device (hardware and WARP). Check that the machine exposes a D3D11 driver, that remote sessions are
 not blocking graphics initialisation, and that the `d3dcompiler_47.dll` redistributable is installed.
-Even on systems equipped with modern GPUs (the local workstation carries an RTX 5090) this error can persist when running headless or inside a constrained remote session, so inspect device creation flags and adapter selection if drivers are already present.
+Adapter descriptions, LUIDs, and the exact HRESULT are now written to the log during device creation so you can confirm which path failed before retrying. This still occurs on the primary RTX 5090 workstation with active displays, so prioritise offscreen device policies, debug-layer output, and staging-buffer sizing over assumptions about headless GPUs.
 
 ## Next Steps for Contributors
 - Continue refining documentation and tooling so Windows developers can provision environments quickly.

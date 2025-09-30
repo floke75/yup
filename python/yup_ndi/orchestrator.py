@@ -481,6 +481,7 @@ def _default_renderer_factory (config: NDIStreamConfig) -> Any:
         raise ImportError("yup_rive_renderer is not available; build the extension before creating streams")
 
     staging_buffer_count = 1
+    enable_presentation = False
 
     if config.renderer_options:
         raw_count = config.renderer_options.get("staging_buffer_count")
@@ -493,14 +494,39 @@ def _default_renderer_factory (config: NDIStreamConfig) -> Any:
             if staging_buffer_count < 1:
                 raise ValueError("staging_buffer_count must be at least 1")
 
-        unknown_keys = [key for key in config.renderer_options.keys() if key != "staging_buffer_count"]
+        raw_enable = config.renderer_options.get("enable_presentation")
+        if raw_enable is not None:
+            if isinstance(raw_enable, bool):
+                enable_presentation = raw_enable
+            elif isinstance(raw_enable, str):
+                lowered = raw_enable.strip().lower()
+                if lowered in {"1", "true", "yes", "on"}:
+                    enable_presentation = True
+                elif lowered in {"0", "false", "no", "off"}:
+                    enable_presentation = False
+                else:  # pragma: no cover - defensive branch
+                    raise ValueError("enable_presentation must be a boolean or truthy string")
+            else:
+                enable_presentation = bool(raw_enable)
+
+        allowed_keys = {"staging_buffer_count", "enable_presentation"}
+        unknown_keys = [key for key in config.renderer_options.keys() if key not in allowed_keys]
         if unknown_keys:
             _logger.warning(
                 "Renderer options %s are not recognised by the default factory",
                 ", ".join(sorted(unknown_keys)),
             )
 
-    renderer = RiveOffscreenRenderer(config.width, config.height, staging_buffer_count)
+    renderer = RiveOffscreenRenderer(config.width, config.height, staging_buffer_count, enable_presentation)
+
+    diagnostics_text = ""
+    get_diagnostics = getattr(renderer, "get_diagnostics", None)
+    if callable(get_diagnostics):
+        try:
+            diagnostics_text = str(get_diagnostics()).strip()
+        except Exception:  # pragma: no cover - defensive conversion guard
+            diagnostics_text = ""
+
     if not renderer.is_valid():
         detail = ""
         get_last_error = getattr(renderer, "get_last_error", None)
@@ -511,10 +537,19 @@ def _default_renderer_factory (config: NDIStreamConfig) -> Any:
                 detail = ""
 
         message = f"Failed to initialise RiveOffscreenRenderer for {config.width}x{config.height}"
-        if detail:
-            message = f"{message}: {detail}"
+        diagnostics_payload = detail or diagnostics_text
+
+        if diagnostics_payload:
+            message = f"{message}: {diagnostics_payload}"
+
+        _logger.error("Renderer initialisation failed for %s: %s", config.name, message)
+        if diagnostics_text and diagnostics_text != diagnostics_payload:
+            _logger.debug("Renderer diagnostics:%s%s", "\n", diagnostics_text)
 
         raise RuntimeError(message)
+
+    if diagnostics_text:
+        _logger.debug("Renderer diagnostics for %s:%s%s", config.name, "\n", diagnostics_text)
 
     return renderer
 

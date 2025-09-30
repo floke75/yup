@@ -51,6 +51,7 @@ def main() -> None:
     parser.add_argument("--state-machine", dest="state_machine", help="State machine to trigger automatically")
     parser.add_argument("--fps", default="60", help="Render cadence: float or fraction (e.g. 60000/1001)")
     parser.add_argument("--ndi-groups", default="", help="Optional NDI group membership")
+    parser.add_argument("--present-preview", action="store_true", help="Mirror frames in a local window for troubleshooting")
     args = parser.parse_args()
 
     frame_rate = _parse_frame_rate(args.fps)
@@ -65,6 +66,7 @@ def main() -> None:
         state_machine=args.state_machine,
         frame_rate=frame_rate,
         ndi_groups=args.ndi_groups,
+        renderer_options={"enable_presentation": args.present_preview},
     )
 
     with NDIOrchestrator() as orchestrator:

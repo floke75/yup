@@ -135,11 +135,11 @@ namespace
 
         renderer
             .def (
-                py::init([] (int width, int height, std::size_t stagingBufferCount)
+                py::init([] (int width, int height, std::size_t stagingBufferCount, bool enablePresentation)
                 {
                     try
                     {
-                        auto instance = std::make_unique<RiveOffscreenRenderer> (width, height, stagingBufferCount);
+                        auto instance = std::make_unique<RiveOffscreenRenderer> (width, height, stagingBufferCount, enablePresentation);
                         if (! instance->isValid())
                         {
                             const auto error = instance->getLastError().toStdString();
@@ -163,11 +163,25 @@ namespace
                 "width"_a,
                 "height"_a,
                 "staging_buffer_count"_a = std::size_t { 1 },
-                "Creates a renderer with the specified output dimensions and staging buffer depth.")
+                "enable_presentation"_a = false,
+                "Creates a renderer with the specified output dimensions and staging buffer depth."
+                " Set enable_presentation to true to mirror frames in a troubleshooting window.")
             .def (
                 "is_valid",
                 &RiveOffscreenRenderer::isValid,
                 "Returns true when the underlying GPU resources were initialised.")
+            .def (
+                "set_presentation_enabled",
+                [] (RiveOffscreenRenderer& self, bool enabled)
+                {
+                    self.setPresentationEnabled (enabled);
+                },
+                "enabled"_a,
+                "Enables or disables the troubleshooting presentation window.")
+            .def (
+                "is_presentation_enabled",
+                &RiveOffscreenRenderer::isPresentationEnabled,
+                "Returns true when the troubleshooting presentation window is active.")
             .def (
                 "load_file",
                 [] (RiveOffscreenRenderer& self, const std::string& path, std::optional<std::string> artboard)
@@ -324,7 +338,14 @@ namespace
                 {
                     return self.getLastError().toStdString();
                 },
-                "Returns the last error message reported by the renderer.");
+                "Returns the last error message reported by the renderer.")
+            .def (
+                "get_diagnostics",
+                [] (const RiveOffscreenRenderer& self)
+                {
+                    return self.getDiagnostics().toStdString();
+                },
+                "Returns a newline-delimited diagnostics summary from the most recent initialisation attempt.");
     }
 }
 

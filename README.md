@@ -11,6 +11,10 @@ Rive → NDI path.
 ### Key Capabilities
 - **Offscreen Direct3D 11 renderer:** `yup::RiveOffscreenRenderer` initialises a swapchain-free D3D11
 device, renders artboards into BGRA textures, and provides deterministic CPU readback.
+- **Diagnostics-ready device initialisation:** Hardware adapter names, feature levels, and HRESULT failures
+are logged whenever Direct3D device creation is attempted, making it easier to track down bad allocations or WARP
+fall-backs on systems that should be GPU-capable. Optional presentation mirroring can be toggled at runtime for
+onscreen debugging.
 - **Python bindings with zero-copy access:** The `yup_rive_renderer` extension exposes artboard
 enumeration, animation/state-machine control, and both copy and shared-memory views of the frame
 buffer.
@@ -146,9 +150,11 @@ A convenience runner lives at `python/examples/run_rive_ndi.py` when you want to
 
 ```powershell
 python python/examples/run_rive_ndi.py --name StudioTicker --width 1920 --height 1080 --fps 60 assets/demo.riv
+# Add --present-preview to mirror frames in a troubleshooting window
 ```
 
-The helper mirrors the CLI flags and raises a `ValueError` when Direct3D 11 cannot be initialised (the message surfaces the HRESULT or WARP fallback failures) so you can troubleshoot driver issues quickly. If you hit this on hardware that already has a capable GPU (the local lab box runs an NVIDIA GeForce RTX 5090), treat it as an offscreen/remote-session constraint and review the D3D11 device creation flags instead of assuming the driver stack is missing.
+The helper mirrors the CLI flags and raises a `ValueError` when Direct3D 11 cannot be initialised (the message surfaces the HRESULT or WARP fallback failures) so you can troubleshoot driver issues quickly. The primary workstation is a Windows 11 desktop with an NVIDIA GeForce RTX 5090 and active displays—not a headless VM—so repeated "bad allocation" errors point to offscreen device policies or staging-buffer pressure rather than missing GPU hardware. Review the logged D3D11 creation flags and call `renderer.get_diagnostics()` to inspect the newline-delimited report before assuming the driver stack is unavailable.
+Using `--present-preview` opens a temporary window driven by the same swapchain-free renderer so you can verify draw output and adapter selection while keeping the CPU readback path intact. Programmatic callers can set `renderer_options={"enable_presentation": True}` on `NDIStreamConfig` to achieve the same behaviour.
 
 ## Development Guidelines
 - Follow Allman brace style and the conventions outlined in `CLAUDE.md`.

@@ -52,10 +52,16 @@ class YUP_API RiveOffscreenRenderer
 {
 public:
     /** Creates a renderer for the given output dimensions. */
-    RiveOffscreenRenderer (int width, int height, std::size_t stagingBufferCount = 1);
+    RiveOffscreenRenderer (int width, int height, std::size_t stagingBufferCount = 1, bool enablePresentation = false);
 
     /** Destructor. */
     ~RiveOffscreenRenderer();
+
+    /** Enables or disables the troubleshooting presentation window at runtime. */
+    void setPresentationEnabled (bool shouldEnable);
+
+    /** Returns true when the presentation window is active. */
+    bool isPresentationEnabled() const noexcept;
 
     /** Returns true when the underlying GPU resources were initialised. */
     bool isValid() const noexcept;
@@ -128,6 +134,9 @@ public:
 
     /** Returns the last error that occurred while operating the renderer. */
     const String& getLastError() const noexcept;
+
+    /** Returns a newline-delimited diagnostics report for the most recent initialisation attempt. */
+    String getDiagnostics() const;
 
 private:
     struct Impl;

@@ -30,14 +30,19 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <iostream>
 #include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
 #if YUP_WINDOWS && YUP_RIVE_USE_D3D
 
+#include <windows.h>
 #include <d3d11.h>
+#include <dxgi.h>
 #include <dxgi1_2.h>
+#include <dxgi1_6.h>
 #include <wrl/client.h>
 
 #include "rive/layout.hpp"
@@ -53,6 +58,8 @@ namespace yup
 
 namespace
 {
+constexpr wchar_t kPresentationWindowClassName[] = L"YupRivePreviewWindow";
+constexpr wchar_t kPresentationWindowTitle[] = L"YUP Rive Preview";
 constexpr DXGI_FORMAT kRenderFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
 
 [[nodiscard]] std::string makeErrorMessage (HRESULT hr)
@@ -117,7 +124,7 @@ struct RiveOffscreenRenderer::Impl
         Reading
     };
 
-    explicit Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn)
+    explicit Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn, bool enablePresentation)
         : width (std::max (widthIn, 0)),
           height (std::max (heightIn, 0)),
           rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
@@ -126,7 +133,8 @@ struct RiveOffscreenRenderer::Impl
           stagingTextures (stagingBufferCount),
           stagingBuffers (stagingBufferCount, std::vector<uint8> (frameSize, 0)),
           frameStates (stagingBufferCount, FrameState::Available),
-          frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0))
+          frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0)),
+          presentationRequested (enablePresentation)
     {
         if (widthIn <= 0 || heightIn <= 0)
         {
@@ -146,14 +154,38 @@ struct RiveOffscreenRenderer::Impl
 
     bool isValid() const noexcept { return initialised; }
 
+    void setPresentationEnabled (bool shouldEnable)
+    {
+        presentationRequested = shouldEnable;
+
+        if (! initialised)
+            return;
+
+        if (shouldEnable)
+        {
+            if (! presentationEnabled)
+                initialisePresentationResources();
+        }
+        else if (presentationEnabled)
+        {
+            releasePresentationResources();
+        }
+    }
+
+    bool isPresentationEnabled() const noexcept { return presentationEnabled; }
+
     Result load (const File& fileToLoad, const String& artboardName)
     {
+        logInfo (String::formatted ("Loading Rive file '%s' (%lld bytes)",
+                                    fileToLoad.getFullPathName().toRawUTF8(),
+                                    static_cast<long long> (fileToLoad.getSize())));
         return loadInternal (
             [&fileToLoad] (rive::Factory& factory) { return ArtboardFile::load (fileToLoad, factory); }, artboardName);
     }
 
     Result load (Span<const uint8> bytes, const String& artboardName)
     {
+        logInfo (String::formatted ("Loading Rive data from memory (%zu bytes)", bytes.size()));
         return loadInternal (
             [&bytes] (rive::Factory& factory)
             {
@@ -166,6 +198,7 @@ struct RiveOffscreenRenderer::Impl
     Result loadInternal (const std::function<ArtboardFile::LoadResult (rive::Factory&)>& loader,
                          const String& artboardName)
     {
+        clearDiagnostics();
         lastError.clear();
 
         const auto failWith = [this] (String message)
@@ -184,10 +217,18 @@ struct RiveOffscreenRenderer::Impl
         if (! loadResult)
         {
             lastError = loadResult.getErrorMessage();
+            logWarning (String ("Failed to load Rive file: ") + lastError);
+            appendDiagnostic ("error", lastError);
             return Result::fail (lastError);
         }
 
         artboardFile = loadResult.getValue();
+
+        if (auto* riveFile = artboardFile->getRiveFile())
+        {
+            logInfo (String::formatted ("Loaded Rive file with %u artboard(s)",
+                                        static_cast<unsigned int> (riveFile->artboardCount())));
+        }
 
         return selectArtboardInternal (artboardName);
     }
@@ -379,6 +420,8 @@ struct RiveOffscreenRenderer::Impl
 
     bool advance (float deltaSeconds)
     {
+        pumpWindowMessages();
+
         if (! initialised || paused || scene == nullptr)
             return false;
 
@@ -401,10 +444,101 @@ struct RiveOffscreenRenderer::Impl
     }
 
     const String& getLastError() const noexcept { return lastError; }
+    String getDiagnosticsReport() const
+    {
+        std::scoped_lock lock (diagnosticsMutex);
+        return diagnosticsLog;
+    }
 
     String getActiveArtboardName() const { return activeArtboardName; }
 
 private:
+
+    struct PresentationResources
+    {
+        Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTargetView;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
+        HWND hwnd = nullptr;
+    };
+
+    void clearDiagnostics() const
+    {
+        std::scoped_lock lock (diagnosticsMutex);
+        diagnosticsLog = {};
+    }
+
+    void appendDiagnostic (const char* level, const String& message) const
+    {
+        std::scoped_lock lock (diagnosticsMutex);
+
+        if (diagnosticsLog.isNotEmpty())
+            diagnosticsLog += '\n';
+
+        diagnosticsLog += String::formatted ("[%s] %s", level, message.toRawUTF8());
+    }
+
+    struct AdapterInfo
+    {
+        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+        DXGI_ADAPTER_DESC1 desc {};
+    };
+
+    void enumerateAdapters()
+    {
+        availableAdapters.clear();
+
+        Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+        auto hr = ::CreateDXGIFactory1 (__uuidof (IDXGIFactory1), reinterpret_cast<void**> (factory.GetAddressOf()));
+        if (FAILED (hr))
+        {
+            const auto message = String::formatted (
+                "CreateDXGIFactory1 failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (message);
+            appendDiagnostic ("error", message);
+            return;
+        }
+
+        logInfo ("Enumerating DXGI adapters");
+
+        UINT index = 0;
+        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+
+        while (factory->EnumAdapters1 (index, adapter.ReleaseAndGetAddressOf()) != DXGI_ERROR_NOT_FOUND)
+        {
+            DXGI_ADAPTER_DESC1 desc {};
+            if (SUCCEEDED (adapter->GetDesc1 (&desc)))
+            {
+                const auto dedicatedGiB = static_cast<double> (desc.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
+                logInfo (String::formatted (
+                    "Adapter %u: %s (vendor=0x%04X, device=0x%04X, VRAM=%.2f GiB, flags=0x%08X)",
+                    static_cast<unsigned int> (index),
+                    String (desc.Description).toRawUTF8(),
+                    static_cast<unsigned int> (desc.VendorId),
+                    static_cast<unsigned int> (desc.DeviceId),
+                    dedicatedGiB,
+                    static_cast<unsigned int> (desc.Flags)));
+
+                AdapterInfo info;
+                info.adapter = adapter;
+                info.desc = desc;
+                availableAdapters.push_back (std::move (info));
+            }
+            else
+            {
+                logWarning (String::formatted ("Adapter %u: failed to query description", static_cast<unsigned int> (index)));
+            }
+
+            ++index;
+        }
+
+        if (index == 0)
+        {
+            logWarning ("No DXGI adapters were reported by the runtime");
+        }
+    }
 
     void initialise()
     {
@@ -412,7 +546,16 @@ private:
 
         lastError.clear();
 
-        UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+        logInfo (String::formatted ("Initialising Direct3D11 offscreen renderer (%dx%d, staging=%zu, presentation=%s, frame=%zu bytes)",
+                                    width,
+                                    height,
+                                    stagingBufferCount,
+                                    presentationRequested ? "enabled" : "disabled",
+                                    frameSize));
+
+        enumerateAdapters();
+
+        UINT creationFlags = 0;
 #if YUP_DEBUG
         creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
@@ -421,6 +564,7 @@ private:
 
         ComPtr<ID3D11Device> createdDevice;
         ComPtr<ID3D11DeviceContext> createdContext;
+        D3D_FEATURE_LEVEL createdFeatureLevel = D3D_FEATURE_LEVEL_11_0;
 
         const auto describeFailure = [] (const char* driverName, HRESULT hr)
         {
@@ -444,6 +588,7 @@ private:
         {
             ComPtr<ID3D11Device> tempDevice;
             ComPtr<ID3D11DeviceContext> tempContext;
+            D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
 
             auto hr = D3D11CreateDevice (nullptr,
                                          driverType,
@@ -453,7 +598,7 @@ private:
                                          static_cast<UINT> (std::size (requestedLevels)),
                                          D3D11_SDK_VERSION,
                                          tempDevice.GetAddressOf(),
-                                         nullptr,
+                                         &featureLevel,
                                          tempContext.GetAddressOf());
 
             if (FAILED (hr) && hr == E_INVALIDARG)
@@ -466,58 +611,163 @@ private:
                                          0,
                                          D3D11_SDK_VERSION,
                                          tempDevice.GetAddressOf(),
-                                         nullptr,
+                                         &featureLevel,
                                          tempContext.GetAddressOf());
             }
 
             if (FAILED (hr))
             {
                 errorOut = describeFailure (driverName, hr);
+                appendDiagnostic ("error", errorOut);
                 return false;
             }
 
-            errorOut.clear();
             createdDevice = std::move (tempDevice);
             createdContext = std::move (tempContext);
+            createdFeatureLevel = featureLevel;
+            errorOut.clear();
             return true;
         };
 
+        const auto createDeviceForAdapter = [&] (IDXGIAdapter1* adapter,
+                                                 const DXGI_ADAPTER_DESC1& desc,
+                                                 String& errorOut) -> bool
+        {
+            ComPtr<ID3D11Device> tempDevice;
+            ComPtr<ID3D11DeviceContext> tempContext;
+            D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+
+            auto description = String (desc.Description);
+
+            auto hr = D3D11CreateDevice (adapter,
+                                         D3D_DRIVER_TYPE_UNKNOWN,
+                                         nullptr,
+                                         creationFlags,
+                                         requestedLevels,
+                                         static_cast<UINT> (std::size (requestedLevels)),
+                                         D3D11_SDK_VERSION,
+                                         tempDevice.GetAddressOf(),
+                                         &featureLevel,
+                                         tempContext.GetAddressOf());
+
+            if (FAILED (hr) && hr == E_INVALIDARG)
+            {
+                hr = D3D11CreateDevice (adapter,
+                                         D3D_DRIVER_TYPE_UNKNOWN,
+                                         nullptr,
+                                         creationFlags,
+                                         nullptr,
+                                         0,
+                                         D3D11_SDK_VERSION,
+                                         tempDevice.GetAddressOf(),
+                                         &featureLevel,
+                                         tempContext.GetAddressOf());
+            }
+
+            if (FAILED (hr))
+            {
+                errorOut = describeFailure (description.toRawUTF8(), hr);
+                return false;
+            }
+
+            createdDevice = std::move (tempDevice);
+            createdContext = std::move (tempContext);
+            createdFeatureLevel = featureLevel;
+            activeAdapterDescription = description;
+            errorOut.clear();
+            return true;
+        };
+
+        const char* activeDriver = "hardware";
         String hardwareError;
 
-        if (! createDevice (D3D_DRIVER_TYPE_HARDWARE, "hardware", hardwareError))
+        const auto tryEnumeratedAdapters = [&, this]() -> bool
         {
-            String warpError;
-
-            if (! createDevice (D3D_DRIVER_TYPE_WARP, "WARP", warpError))
+            for (const auto& info : availableAdapters)
             {
-                lastError = hardwareError;
+                logInfo (String::formatted ("Attempting D3D11CreateDevice on adapter '%s'",
+                                            String (info.desc.Description).toRawUTF8()));
 
-                if (warpError.isNotEmpty())
+                String adapterError;
+                if (createDeviceForAdapter (info.adapter.Get(), info.desc, adapterError))
                 {
-                    if (lastError.isNotEmpty())
-                        lastError += "; ";
-
-                    lastError += warpError;
+                    activeDriver = "hardware";
+                    hardwareError.clear();
+                    return true;
                 }
 
-                return;
+                if (adapterError.isNotEmpty())
+                {
+                    logWarning (String ("Adapter initialisation failed: ") + adapterError);
+                    if (hardwareError.isNotEmpty())
+                        hardwareError += "; ";
+
+                    hardwareError += adapterError;
+                }
             }
+
+            return false;
+        };
+
+        const bool adapterSuccess = tryEnumeratedAdapters();
+
+        if (! adapterSuccess)
+        {
+            logInfo ("Attempting D3D11CreateDevice with hardware driver (no adapter binding)");
+            if (! createDevice (D3D_DRIVER_TYPE_HARDWARE, "hardware", hardwareError))
+            {
+                if (hardwareError.isNotEmpty())
+                    logWarning (String ("Hardware device initialisation failed: ") + hardwareError);
+
+                logInfo ("Retrying with WARP software driver");
+                String warpError;
+
+                if (! createDevice (D3D_DRIVER_TYPE_WARP, "WARP", warpError))
+                {
+                    lastError = hardwareError;
+
+                    if (warpError.isNotEmpty())
+                    {
+                        if (lastError.isNotEmpty())
+                            lastError += "; ";
+
+                        lastError += warpError;
+                    }
+
+                    logWarning (String ("Unable to create Direct3D11 device: ") + lastError);
+                    appendDiagnostic ("error", lastError);
+                    return;
+                }
+
+                activeDriver = "WARP";
+            }
+        }
+
+        if (! adapterSuccess && hardwareError.isNotEmpty())
+        {
+            appendDiagnostic ("warning", String ("Hardware device initialisation fallback: ") + hardwareError);
         }
 
         device = std::move (createdDevice);
         deviceContext = std::move (createdContext);
+        recordAdapterDetails (device.Get(), activeDriver, createdFeatureLevel);
 
         try
         {
             rive::gpu::D3DContextOptions contextOptions;
+            logInfo ("Creating Rive RenderContextD3DImpl");
             renderContext = rive::gpu::RenderContextD3DImpl::MakeContext (device, deviceContext, contextOptions);
 
             if (renderContext == nullptr)
             {
                 lastError = "Unable to create Rive render context";
+                logWarning (lastError);
+                appendDiagnostic ("error", lastError);
                 releaseDeviceResources();
                 return;
             }
+
+            logInfo ("Rive GPU render context created");
 
             auto* renderContextImpl = renderContext->static_impl_cast<rive::gpu::RenderContextD3DImpl>();
             renderTarget = renderContextImpl->makeRenderTarget (static_cast<uint32_t> (width), static_cast<uint32_t> (height));
@@ -525,6 +775,7 @@ private:
             if (! renderTarget)
             {
                 lastError = "Unable to create render target";
+                logWarning (lastError);
                 releaseDeviceResources();
                 return;
             }
@@ -537,6 +788,8 @@ private:
                     "CreateTexture2D (render target) failed (0x%08X): %s",
                     static_cast<unsigned int> (hr),
                     makeErrorMessage (hr).c_str());
+                logWarning (lastError);
+                appendDiagnostic ("error", lastError);
                 releaseDeviceResources();
                 return;
             }
@@ -552,6 +805,8 @@ private:
                         "CreateTexture2D (staging) failed (0x%08X): %s",
                         static_cast<unsigned int> (hr),
                         makeErrorMessage (hr).c_str());
+                    logWarning (lastError);
+                    appendDiagnostic ("error", lastError);
                     releaseDeviceResources();
                     return;
                 }
@@ -566,23 +821,38 @@ private:
             }
 
             renderer = std::make_unique<rive::RiveRenderer> (renderContext.get());
+
+            bool presentationOk = true;
+            if (presentationRequested)
+                presentationOk = initialisePresentationResources();
+
             initialised = true;
-            lastError.clear();
+
+            if (presentationOk)
+                logInfo (String::formatted ("Rive offscreen renderer ready (presentation %s)", presentationEnabled ? "enabled" : "disabled"));
+            else
+                logWarning (String ("Presentation initialisation failed: ") + lastError);
         }
         catch (const std::exception& exc)
         {
             lastError = String ("Failed to initialise Rive renderer: ") + exc.what();
+            logWarning (lastError);
+            appendDiagnostic ("error", lastError);
             releaseDeviceResources();
         }
         catch (...)
         {
             lastError = "Failed to initialise Rive renderer due to an unknown error";
+            logWarning (lastError);
+            appendDiagnostic ("error", lastError);
             releaseDeviceResources();
         }
     }
-
+    std::vector<AdapterInfo> availableAdapters;
     void releaseDeviceResources()
     {
+        releasePresentationResources();
+
         renderer.reset();
         renderTarget.reset();
         renderContext.reset();
@@ -592,6 +862,18 @@ private:
 
         for (auto& texture : stagingTextures)
             texture.Reset();
+
+        {
+            std::scoped_lock lock (frameMutex);
+            readyFrames.clear();
+            frameSnapshot.reset();
+            frameSnapshotDirty = false;
+            std::fill (frameStates.begin(), frameStates.end(), FrameState::Available);
+        }
+
+        activeAdapterDescription = {};
+        initialised = false;
+        presentationEnabled = false;
     }
 
     void resetScenes()
@@ -673,6 +955,8 @@ private:
 
     bool renderFrame()
     {
+        pumpWindowMessages();
+
         if (! initialised || scene == nullptr)
             return false;
 
@@ -696,6 +980,8 @@ private:
 
         auto* stagingTexture = stagingTextures[writeIndex].Get();
         deviceContext->CopyResource (stagingTexture, renderTexture.Get());
+
+        presentToSwapChain();
 
         D3D11_MAPPED_SUBRESOURCE mapped {};
         auto hr = deviceContext->Map (stagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
@@ -732,6 +1018,369 @@ private:
         return true;
     }
 
+
+    void pumpWindowMessages()
+    {
+        if (! presentationEnabled || presentation.hwnd == nullptr)
+            return;
+
+        MSG msg {};
+        while (::PeekMessageW (&msg, nullptr, 0u, 0u, PM_REMOVE))
+        {
+            ::TranslateMessage (&msg);
+            ::DispatchMessageW (&msg);
+        }
+    }
+
+    bool initialisePresentationResources()
+    {
+        if (! presentationRequested)
+            return false;
+
+        if (presentationEnabled)
+            return true;
+
+        lastError.clear();
+
+        if (device == nullptr || deviceContext == nullptr)
+        {
+            lastError = "Presentation requires an initialised D3D11 device";
+            logWarning (lastError);
+            return false;
+        }
+
+        const auto atom = registerWindowClass();
+        if (atom == 0)
+        {
+            const auto errorCode = ::GetLastError();
+            lastError = String::formatted ("RegisterClassEx failed (0x%08X)", static_cast<unsigned int> (errorCode));
+            logWarning (lastError);
+            return false;
+        }
+
+        if (presentation.hwnd == nullptr)
+        {
+            RECT rect { 0, 0, width, height };
+            ::AdjustWindowRectEx (&rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE, 0);
+
+            const auto windowWidth = rect.right - rect.left;
+            const auto windowHeight = rect.bottom - rect.top;
+
+            auto hwnd = ::CreateWindowExW (0,
+                                           kPresentationWindowClassName,
+                                           kPresentationWindowTitle,
+                                           WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+                                           CW_USEDEFAULT,
+                                           CW_USEDEFAULT,
+                                           windowWidth,
+                                           windowHeight,
+                                           nullptr,
+                                           nullptr,
+                                           ::GetModuleHandleW (nullptr),
+                                           this);
+
+            if (hwnd == nullptr)
+            {
+                const auto errorCode = ::GetLastError();
+                lastError = String::formatted ("CreateWindowEx failed (0x%08X)", static_cast<unsigned int> (errorCode));
+                logWarning (lastError);
+                return false;
+            }
+
+            presentation.hwnd = hwnd;
+            ::ShowWindow (hwnd, SW_SHOWNORMAL);
+            ::UpdateWindow (hwnd);
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIDevice1> dxgiDevice;
+        auto hr = device.As (&dxgiDevice);
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "IDXGIDevice query failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+            releasePresentationResources();
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        hr = dxgiDevice->GetAdapter (adapter.GetAddressOf());
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "IDXGIAdapter query failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+            releasePresentationResources();
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+        hr = adapter->GetParent (__uuidof (IDXGIFactory2), reinterpret_cast<void**> (factory.GetAddressOf()));
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "IDXGIFactory2 query failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+            releasePresentationResources();
+            return false;
+        }
+
+        DXGI_SWAP_CHAIN_DESC1 swapChainDesc {};
+        swapChainDesc.Width = static_cast<UINT> (width);
+        swapChainDesc.Height = static_cast<UINT> (height);
+        swapChainDesc.Format = kRenderFormat;
+        swapChainDesc.SampleDesc.Count = 1;
+        swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        swapChainDesc.BufferCount = 2;
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+        swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+
+        hr = factory->CreateSwapChainForHwnd (device.Get(),
+                                              presentation.hwnd,
+                                              &swapChainDesc,
+                                              nullptr,
+                                              nullptr,
+                                              presentation.swapChain.GetAddressOf());
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "CreateSwapChainForHwnd failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+            releasePresentationResources();
+            return false;
+        }
+
+        factory->MakeWindowAssociation (presentation.hwnd, DXGI_MWA_NO_ALT_ENTER);
+
+        hr = presentation.swapChain->GetBuffer (0, IID_PPV_ARGS (presentation.backBuffer.ReleaseAndGetAddressOf()));
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "Swap chain GetBuffer failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+            releasePresentationResources();
+            return false;
+        }
+
+        hr = device->CreateRenderTargetView (presentation.backBuffer.Get(), nullptr, presentation.renderTargetView.ReleaseAndGetAddressOf());
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "CreateRenderTargetView failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+            releasePresentationResources();
+            return false;
+        }
+
+        presentationEnabled = true;
+        lastError.clear();
+        logInfo ("Presentation window initialised; swap-chain presentation enabled");
+        return true;
+    }
+
+    void releasePresentationResources()
+    {
+        if (presentation.swapChain != nullptr)
+        {
+            presentation.swapChain->SetFullscreenState (FALSE, nullptr);
+            presentation.renderTargetView.Reset();
+            presentation.backBuffer.Reset();
+            presentation.swapChain.Reset();
+        }
+
+        if (presentation.hwnd != nullptr)
+        {
+            auto hwnd = presentation.hwnd;
+            presentation.hwnd = nullptr;
+            ::DestroyWindow (hwnd);
+        }
+
+        presentationEnabled = false;
+    }
+
+    void presentToSwapChain()
+    {
+        if (! presentationEnabled || presentation.swapChain == nullptr || presentation.backBuffer == nullptr)
+            return;
+
+        deviceContext->CopyResource (presentation.backBuffer.Get(), renderTexture.Get());
+
+        auto hr = presentation.swapChain->Present (1, 0);
+        if (FAILED (hr))
+        {
+            lastError = String::formatted (
+                "Swap chain Present failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str());
+            logWarning (lastError);
+
+            if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
+            {
+                const auto reason = device->GetDeviceRemovedReason();
+                logWarning (String::formatted (
+                    "Device removed (0x%08X): %s",
+                    static_cast<unsigned int> (reason),
+                    makeErrorMessage (reason).c_str()));
+            }
+
+            releasePresentationResources();
+        }
+    }
+
+    void recordAdapterDetails (ID3D11Device* deviceToDescribe, const char* driverName, D3D_FEATURE_LEVEL featureLevel)
+    {
+        currentFeatureLevel = featureLevel;
+        activeAdapterDescription = {};
+
+        if (deviceToDescribe == nullptr)
+            return;
+
+        Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+        auto hr = deviceToDescribe->QueryInterface (IID_PPV_ARGS (dxgiDevice.GetAddressOf()));
+        if (FAILED (hr))
+        {
+            logWarning (String::formatted (
+                "IDXGIDevice query failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str()));
+            return;
+        }
+
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        hr = dxgiDevice->GetAdapter (adapter.GetAddressOf());
+        if (FAILED (hr))
+        {
+            logWarning (String::formatted (
+                "IDXGIAdapter query failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str()));
+            return;
+        }
+
+        DXGI_ADAPTER_DESC desc {};
+        hr = adapter->GetDesc (&desc);
+        if (FAILED (hr))
+        {
+            logWarning (String::formatted (
+                "IDXGIAdapter::GetDesc failed (0x%08X): %s",
+                static_cast<unsigned int> (hr),
+                makeErrorMessage (hr).c_str()));
+            return;
+        }
+
+        activeAdapterDescription = String (desc.Description);
+
+        const double vramGiB = static_cast<double> (desc.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
+        logInfo (String::formatted (
+            "Using %s driver on adapter '%s' (vendor=0x%04X, device=0x%04X, VRAM=%.2f GiB, feature=%s)",
+            driverName,
+            activeAdapterDescription.toRawUTF8(),
+            static_cast<unsigned int> (desc.VendorId),
+            static_cast<unsigned int> (desc.DeviceId),
+            vramGiB,
+            featureLevelToString (featureLevel)));
+    }
+
+    static ATOM registerWindowClass()
+    {
+        static std::once_flag once;
+        static ATOM atom = 0;
+
+        std::call_once (once, []()
+        {
+            WNDCLASSEXW cls {};
+            cls.cbSize = sizeof (cls);
+            cls.style = CS_HREDRAW | CS_VREDRAW;
+            cls.lpfnWndProc = &RiveOffscreenRenderer::Impl::windowProc;
+            cls.hInstance = ::GetModuleHandleW (nullptr);
+            cls.hCursor = ::LoadCursorW (nullptr, IDC_ARROW);
+            cls.lpszClassName = kPresentationWindowClassName;
+            atom = ::RegisterClassExW (&cls);
+        });
+
+        return atom;
+    }
+
+    static LRESULT CALLBACK windowProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+    {
+        if (message == WM_NCCREATE)
+        {
+            const auto* create = reinterpret_cast<CREATESTRUCTW*> (lParam);
+            ::SetWindowLongPtrW (hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR> (create->lpCreateParams));
+            return TRUE;
+        }
+
+        auto* self = reinterpret_cast<Impl*> (::GetWindowLongPtrW (hwnd, GWLP_USERDATA));
+        if (self == nullptr)
+            return ::DefWindowProcW (hwnd, message, wParam, lParam);
+
+        switch (message)
+        {
+            case WM_CLOSE:
+                self->presentationRequested = false;
+                self->releasePresentationResources();
+                return 0;
+
+            case WM_DESTROY:
+                ::SetWindowLongPtrW (hwnd, GWLP_USERDATA, 0);
+                return 0;
+
+            default:
+                break;
+        }
+
+        return ::DefWindowProcW (hwnd, message, wParam, lParam);
+    }
+
+    static const char* featureLevelToString (D3D_FEATURE_LEVEL level)
+    {
+        switch (level)
+        {
+            case D3D_FEATURE_LEVEL_11_1: return "11_1";
+            case D3D_FEATURE_LEVEL_11_0: return "11_0";
+            case D3D_FEATURE_LEVEL_10_1: return "10_1";
+            case D3D_FEATURE_LEVEL_10_0: return "10_0";
+            case D3D_FEATURE_LEVEL_9_3:  return "9_3";
+            case D3D_FEATURE_LEVEL_9_2:  return "9_2";
+            case D3D_FEATURE_LEVEL_9_1:  return "9_1";
+            default: return "unknown";
+        }
+    }
+
+    void logInfo (const String& message) const
+    {
+        appendDiagnostic ("info", message);
+
+        const auto output = String ("[RiveOffscreenRenderer] ") + message;
+        Logger::writeToLog (output);
+        std::cerr << output.toStdString() << std::endl;
+    }
+
+    void logWarning (const String& message) const
+    {
+        appendDiagnostic ("warning", message);
+
+        const auto output = String ("[RiveOffscreenRenderer] WARNING: ") + message;
+        Logger::writeToLog (output);
+        std::cerr << output.toStdString() << std::endl;
+    }
+
+    mutable String diagnosticsLog;
+    mutable std::mutex diagnosticsMutex;
+
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> deviceContext;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> renderTexture;
@@ -763,6 +1412,12 @@ private:
 
     String lastError;
     String activeArtboardName;
+
+    PresentationResources presentation;
+    bool presentationRequested = false;
+    bool presentationEnabled = false;
+    D3D_FEATURE_LEVEL currentFeatureLevel = D3D_FEATURE_LEVEL_11_0;
+    String activeAdapterDescription;
 
     int width = 0;
     int height = 0;
@@ -849,6 +1504,13 @@ private:
         if (! renderFrame())
             return Result::fail (lastError);
 
+        const auto animationCount = artboard->animationCount();
+        const auto stateMachineCount = artboard->stateMachineCount();
+        logInfo (String::formatted ("Activated artboard '%s' (%u animation(s), %u state machine(s))",
+                                    activeArtboardName.toRawUTF8(),
+                                    static_cast<unsigned int> (animationCount),
+                                    static_cast<unsigned int> (stateMachineCount)));
+
         return Result::ok();
     }
 
@@ -879,7 +1541,7 @@ namespace yup
 
 struct RiveOffscreenRenderer::Impl
 {
-    Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn)
+    Impl (int widthIn, int heightIn, std::size_t stagingBufferCountIn, bool enablePresentation)
         : width (std::max (widthIn, 0)),
           height (std::max (heightIn, 0)),
           rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
@@ -896,7 +1558,18 @@ struct RiveOffscreenRenderer::Impl
         }
     }
 
-    bool isValid() const noexcept { return false; }
+    void setPresentationEnabled (bool shouldEnable)
+    {
+        presentationRequested = shouldEnable;
+        presentationEnabled = false;
+
+        if (shouldEnable)
+            lastError = "Presentation mode is only available on Windows";
+        else
+            lastError.clear();
+    }
+
+    bool isPresentationEnabled() const noexcept { return presentationEnabled; }
 
     Result load (const File&, const String&)
     {
@@ -1009,12 +1682,22 @@ struct RiveOffscreenRenderer::Impl
 namespace yup
 {
 
-RiveOffscreenRenderer::RiveOffscreenRenderer (int width, int height, std::size_t stagingBufferCount)
-    : impl (std::make_unique<Impl> (width, height, stagingBufferCount))
+RiveOffscreenRenderer::RiveOffscreenRenderer (int width, int height, std::size_t stagingBufferCount, bool enablePresentation)
+    : impl (std::make_unique<Impl> (width, height, stagingBufferCount, enablePresentation))
 {
 }
 
 RiveOffscreenRenderer::~RiveOffscreenRenderer() = default;
+
+void RiveOffscreenRenderer::setPresentationEnabled (bool shouldEnable)
+{
+    impl->setPresentationEnabled (shouldEnable);
+}
+
+bool RiveOffscreenRenderer::isPresentationEnabled() const noexcept
+{
+    return impl->isPresentationEnabled();
+}
 
 bool RiveOffscreenRenderer::isValid() const noexcept
 {
@@ -1129,6 +1812,11 @@ std::shared_ptr<const std::vector<uint8>> RiveOffscreenRenderer::getFrameBufferS
 const String& RiveOffscreenRenderer::getLastError() const noexcept
 {
     return impl->getLastError();
+}
+
+String RiveOffscreenRenderer::getDiagnostics() const
+{
+    return impl->getDiagnosticsReport();
 }
 
 String RiveOffscreenRenderer::getActiveArtboardName() const

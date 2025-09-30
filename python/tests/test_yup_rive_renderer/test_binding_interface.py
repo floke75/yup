@@ -80,3 +80,17 @@ def test_load_bytes_requires_contiguous_memory (renderer: Any) -> None:
 
     with pytest.raises(ValueError, match="contiguous 1D buffer"):
         renderer.load_bytes(non_contiguous)
+
+
+
+def test_presentation_toggle_methods_exist (renderer: Any) -> None:
+    assert hasattr(renderer, "set_presentation_enabled")
+    assert hasattr(renderer, "is_presentation_enabled")
+
+    renderer.set_presentation_enabled(False)
+    assert isinstance(renderer.is_presentation_enabled(), bool)
+
+
+def test_diagnostics_method_returns_string (renderer: Any) -> None:
+    diagnostics = renderer.get_diagnostics()
+    assert isinstance(diagnostics, str)

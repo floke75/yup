@@ -37,6 +37,8 @@
   ==============================================================================
 */
 
+#include <iostream>
+
 namespace yup
 {
 
@@ -61,6 +63,8 @@ void Logger::writeToLog (const String& message)
         currentLogger->logMessage (message);
     else
         outputDebugString (message);
+
+    std::cerr << message << std::endl;
 }
 
 #if YUP_LOG_ASSERTIONS || YUP_DEBUG
