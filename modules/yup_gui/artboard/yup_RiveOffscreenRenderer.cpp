@@ -412,7 +412,31 @@ private:
 
         lastError.clear();
 
+        Logger::writeToLog ("RiveOffscreenRenderer: Initialising D3D11");
+
+        ComPtr<IDXGIFactory2> dxgiFactory;
+        auto hr = CreateDXGIFactory1 (__uuidof (IDXGIFactory2), (void**) dxgiFactory.GetAddressOf());
+
+        if (SUCCEEDED (hr))
+        {
+            Logger::writeToLog ("RiveOffscreenRenderer: Enumerating DXGI adapters...");
+            ComPtr<IDXGIAdapter1> dxgiAdapter;
+
+            for (UINT i = 0; dxgiFactory->EnumAdapters1 (i, dxgiAdapter.ReleaseAndGetAddressOf()) != DXGI_ERROR_NOT_FOUND; ++i)
+            {
+                DXGI_ADAPTER_DESC1 desc;
+                dxgiAdapter->GetDesc1 (&desc);
+                Logger::writeToLog (String::formatted ("  - Adapter %u: %s", i, String (desc.Description).toRawUTF8()));
+            }
+        }
+        else
+        {
+            Logger::writeToLog (String::formatted ("RiveOffscreenRenderer: Failed to create DXGI factory (0x%08X)", static_cast<unsigned int> (hr)));
+        }
+
         UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+
+        // Try to create a debug device if we're in a debug build. If it fails, try again without the debug flag.
 #if YUP_DEBUG
         creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
@@ -422,64 +446,83 @@ private:
         ComPtr<ID3D11Device> createdDevice;
         ComPtr<ID3D11DeviceContext> createdContext;
 
-        const auto describeFailure = [] (const char* driverName, HRESULT hr)
+        const auto describeFailure = [] (const char* driverName, HRESULT hr, bool isDebug)
         {
             const auto message = makeErrorMessage (hr);
-            if (! message.empty())
-            {
-                return String::formatted (
-                    "D3D11CreateDevice (%s) failed (0x%08X): %s",
-                    driverName,
-                    static_cast<unsigned int> (hr),
-                    message.c_str());
-            }
+            String fullMessage = "D3D11CreateDevice (" + String (driverName) + ") failed (0x" + String::toHexString (static_cast<int> (hr)) + ")";
 
-            return String::formatted (
-                "D3D11CreateDevice (%s) failed (0x%08X)",
-                driverName,
-                static_cast<unsigned int> (hr));
+            if (isDebug)
+                fullMessage += " [with D3D11_CREATE_DEVICE_DEBUG]";
+
+            if (message.length() > 0)
+                fullMessage += ": " + String (message);
+
+            return fullMessage;
         };
 
         const auto createDevice = [&] (D3D_DRIVER_TYPE driverType, const char* driverName, String& errorOut) -> bool
         {
             ComPtr<ID3D11Device> tempDevice;
             ComPtr<ID3D11DeviceContext> tempContext;
+            HRESULT hr = E_FAIL;
 
-            auto hr = D3D11CreateDevice (nullptr,
-                                         driverType,
-                                         nullptr,
-                                         creationFlags,
-                                         requestedLevels,
-                                         static_cast<UINT> (std::size (requestedLevels)),
-                                         D3D11_SDK_VERSION,
-                                         tempDevice.GetAddressOf(),
-                                         nullptr,
-                                         tempContext.GetAddressOf());
-
-            if (FAILED (hr) && hr == E_INVALIDARG)
+            auto attemptCreation = [&] (UINT flags)
             {
                 hr = D3D11CreateDevice (nullptr,
-                                         driverType,
-                                         nullptr,
-                                         creationFlags,
-                                         nullptr,
-                                         0,
-                                         D3D11_SDK_VERSION,
-                                         tempDevice.GetAddressOf(),
-                                         nullptr,
-                                         tempContext.GetAddressOf());
-            }
+                                        driverType,
+                                        nullptr,
+                                        flags,
+                                        requestedLevels,
+                                        static_cast<UINT> (std::size (requestedLevels)),
+                                        D3D11_SDK_VERSION,
+                                        tempDevice.ReleaseAndGetAddressOf(),
+                                        nullptr,
+                                        tempContext.ReleaseAndGetAddressOf());
 
-            if (FAILED (hr))
+                if (FAILED (hr) && hr == E_INVALIDARG)
+                {
+                    hr = D3D11CreateDevice (nullptr,
+                                            driverType,
+                                            nullptr,
+                                            flags,
+                                            nullptr,
+                                            0,
+                                            D3D11_SDK_VERSION,
+                                            tempDevice.ReleaseAndGetAddressOf(),
+                                            nullptr,
+                                            tempContext.ReleaseAndGetAddressOf());
+                }
+
+                return SUCCEEDED (hr);
+            };
+
+            if (attemptCreation (creationFlags))
             {
-                errorOut = describeFailure (driverName, hr);
-                return false;
+                errorOut.clear();
+                createdDevice = std::move (tempDevice);
+                createdContext = std::move (tempContext);
+                return true;
             }
 
-            errorOut.clear();
-            createdDevice = std::move (tempDevice);
-            createdContext = std::move (tempContext);
-            return true;
+#if YUP_DEBUG
+            // If debug creation failed, try again without the debug flag.
+            const auto debugHr = hr;
+            if ((creationFlags & D3D11_CREATE_DEVICE_DEBUG) != 0)
+            {
+                Logger::writeToLog (describeFailure (driverName, debugHr, true));
+                Logger::writeToLog ("RiveOffscreenRenderer: Retrying without D3D11_CREATE_DEVICE_DEBUG flag...");
+                if (attemptCreation (creationFlags & ~D3D11_CREATE_DEVICE_DEBUG))
+                {
+                    errorOut.clear();
+                    createdDevice = std::move (tempDevice);
+                    createdContext = std::move (tempContext);
+                    return true;
+                }
+            }
+#endif
+
+            errorOut = describeFailure (driverName, hr, (creationFlags & D3D11_CREATE_DEVICE_DEBUG) != 0);
+            return false;
         };
 
         String hardwareError;
