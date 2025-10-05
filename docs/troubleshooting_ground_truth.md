@@ -11,10 +11,10 @@ future agents do not re-hash disproven assumptions.
 - NDI SDK 6 is available under `C:\Program Files\NDI\NDI 6 SDK`, and NDI Tools live under `C:\Program Files\NDI\NDI 6 Tools`.
 
 ## Diagnostics Checklist
-1. **Direct3D sanity check:** Run `python tools/check_d3d11_device.py` from a Windows Python shell to confirm `D3D11CreateDevice` succeeds. Use `--warp` to isolate WARP fallback behaviour when hardware initialisation fails. (Running the script inside WSL/Git-Bash fails because `ctypes.windll` is unavailable.)
+1. **Direct3D sanity check:** Run `tools\run_d3d11_diagnostics.cmd` (or `python tools/check_d3d11_device.py`) from a Windows Python shell to confirm `D3D11CreateDevice` succeeds. Use `--warp` to isolate WARP fallback behaviour when hardware initialisation fails. (Running the script inside WSL/Git-Bash fails because `ctypes.windll` is unavailable.)
 2. **Renderer construction:** Instantiate `yup_rive_renderer.RiveOffscreenRenderer` with `enable_presentation=True` to surface swap-chain diagnostics and capture the new `get_diagnostics()` report if construction fails.
 3. **Presentation mirror:** When the renderer initialises, toggle the preview window to ensure the staging buffers and swap-chain copy path are healthy before plumbing NDI sends.
-4. **NDI orchestration:** Exercise `python/examples/run_rive_ndi.py --present-preview` with a known-good `.riv` file once D3D initialisation succeeds so the orchestrator and sender plumbing are validated together.
+4. **NDI orchestration:** Exercise `tools\run_rive_demo.cmd` (or `python/examples/run_rive_ndi.py --present-preview`) with a known-good `.riv` file once D3D initialisation succeeds so the orchestrator and sender plumbing are validated together.
 5. **Log capture:** Persist the renderer diagnostics (`get_diagnostics()`), orchestrator error logs, and any HRESULTs observed in the Visual Studio Output window; attach them to this file or `docs/Build Progress Log.md` for future reference.
 
 ## Latest Diagnostics (2025-10-05)

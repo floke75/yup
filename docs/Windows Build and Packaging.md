@@ -198,7 +198,7 @@ The wheel now ships two native entry points: `yup` (the monolithic extension exp
   to compile. Replace raw `sleep()`/`Sleep()` usages in platform code (e.g. the DirectSound
   backend) with `Thread::sleep(milliseconds)` so the implementation maps cleanly onto the
   Windows API.
-- **Direct3D 11 initialisation fails with `bad allocation`** – The lab machine is a non-headless Windows 11 workstation with an NVIDIA GeForce RTX 5090. Run `python tools/check_d3d11_device.py` from a native Windows shell to confirm `D3D11CreateDevice` succeeds (hardware and WARP). Then retry the renderer with `enable_presentation=True` and collect the new `get_diagnostics()` output for attachment to `docs/troubleshooting_ground_truth.md`.
+- **Direct3D 11 initialisation fails with `bad allocation`** – The lab machine is a non-headless Windows 11 workstation with an NVIDIA GeForce RTX 5090. Run `tools\run_d3d11_diagnostics.cmd` (or `python tools/check_d3d11_device.py`) from a native Windows shell to confirm `D3D11CreateDevice` succeeds (hardware and WARP). Then retry the renderer with `tools\run_rive_demo.cmd` (which enables `--present-preview` by default) or an equivalent command-line invocation and collect the new `get_diagnostics()` output for attachment to `docs/troubleshooting_ground_truth.md`.
 
 - **`just` is not recognized** – Install the utility via `winget install --id Casey.Just` or
   download the latest release from GitHub and add it to `PATH`. Alternatively, run the
