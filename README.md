@@ -156,6 +156,8 @@ python python/examples/run_rive_ndi.py --name StudioTicker --width 1920 --height
 The helper mirrors the CLI flags and raises a `ValueError` when Direct3D 11 cannot be initialised (the message surfaces the HRESULT or WARP fallback failures) so you can troubleshoot driver issues quickly. The primary workstation is a Windows 11 desktop with an NVIDIA GeForce RTX 5090 and active displays—not a headless VM—so repeated "bad allocation" errors point to offscreen device policies or staging-buffer pressure rather than missing GPU hardware. Review the logged D3D11 creation flags and call `renderer.get_diagnostics()` to inspect the newline-delimited report before assuming the driver stack is unavailable.
 Using `--present-preview` opens a temporary window driven by the same swapchain-free renderer so you can verify draw output and adapter selection while keeping the CPU readback path intact. Programmatic callers can set `renderer_options={"enable_presentation": True}` on `NDIStreamConfig` to achieve the same behaviour.
 
+> **No-terminal launchers:** Windows users can double-click `tools\run_rive_demo.cmd` to start the demo above (drag a `.riv` file onto the script to override the bundled sample) or `tools\run_d3d11_diagnostics.cmd` to execute the Direct3D 11 sanity check without opening a separate command prompt. Both scripts keep the console open so HRESULT details remain visible.
+
 ## Development Guidelines
 - Follow Allman brace style and the conventions outlined in `CLAUDE.md`.
 - Keep renderer code modular and favour RAII for GPU resources.
