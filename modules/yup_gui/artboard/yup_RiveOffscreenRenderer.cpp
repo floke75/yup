@@ -555,92 +555,57 @@ private:
 
         enumerateAdapters();
 
-        UINT creationFlags = 0;
-#if YUP_DEBUG
-        creationFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
-
         const D3D_FEATURE_LEVEL requestedLevels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
+
+        const UINT baseCreationFlags = 0;
+        std::vector<UINT> creationFlagAttempts;
+#if YUP_DEBUG
+        creationFlagAttempts.push_back (baseCreationFlags | D3D11_CREATE_DEVICE_DEBUG);
+#endif
+        if (creationFlagAttempts.empty() || creationFlagAttempts.back() != baseCreationFlags)
+            creationFlagAttempts.push_back (baseCreationFlags);
 
         ComPtr<ID3D11Device> createdDevice;
         ComPtr<ID3D11DeviceContext> createdContext;
         D3D_FEATURE_LEVEL createdFeatureLevel = D3D_FEATURE_LEVEL_11_0;
 
-        const auto describeFailure = [] (const char* driverName, HRESULT hr)
+        const auto describeFailure = [] (const char* driverName, UINT flags, HRESULT hr)
         {
             const auto message = makeErrorMessage (hr);
+            const bool debugEnabled = (flags & D3D11_CREATE_DEVICE_DEBUG) != 0;
+
             if (! message.empty())
             {
                 return String::formatted (
-                    "D3D11CreateDevice (%s) failed (0x%08X): %s",
+                    "D3D11CreateDevice (%s, flags=0x%08X%s) failed (0x%08X): %s",
                     driverName,
+                    static_cast<unsigned int> (flags),
+                    debugEnabled ? ", debug" : "",
                     static_cast<unsigned int> (hr),
                     message.c_str());
             }
 
             return String::formatted (
-                "D3D11CreateDevice (%s) failed (0x%08X)",
+                "D3D11CreateDevice (%s, flags=0x%08X%s) failed (0x%08X)",
                 driverName,
+                static_cast<unsigned int> (flags),
+                debugEnabled ? ", debug" : "",
                 static_cast<unsigned int> (hr));
         };
 
-        const auto createDevice = [&] (D3D_DRIVER_TYPE driverType, const char* driverName, String& errorOut) -> bool
+        const auto attemptDeviceCreation = [&] (IDXGIAdapter1* adapter,
+                                                D3D_DRIVER_TYPE driverType,
+                                                UINT creationFlags,
+                                                ComPtr<ID3D11Device>& deviceOut,
+                                                ComPtr<ID3D11DeviceContext>& contextOut,
+                                                D3D_FEATURE_LEVEL& featureLevelOut) -> HRESULT
         {
             ComPtr<ID3D11Device> tempDevice;
             ComPtr<ID3D11DeviceContext> tempContext;
             D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
-
-            auto hr = D3D11CreateDevice (nullptr,
-                                         driverType,
-                                         nullptr,
-                                         creationFlags,
-                                         requestedLevels,
-                                         static_cast<UINT> (std::size (requestedLevels)),
-                                         D3D11_SDK_VERSION,
-                                         tempDevice.GetAddressOf(),
-                                         &featureLevel,
-                                         tempContext.GetAddressOf());
-
-            if (FAILED (hr) && hr == E_INVALIDARG)
-            {
-                hr = D3D11CreateDevice (nullptr,
-                                         driverType,
-                                         nullptr,
-                                         creationFlags,
-                                         nullptr,
-                                         0,
-                                         D3D11_SDK_VERSION,
-                                         tempDevice.GetAddressOf(),
-                                         &featureLevel,
-                                         tempContext.GetAddressOf());
-            }
-
-            if (FAILED (hr))
-            {
-                errorOut = describeFailure (driverName, hr);
-                appendDiagnostic ("error", errorOut);
-                return false;
-            }
-
-            createdDevice = std::move (tempDevice);
-            createdContext = std::move (tempContext);
-            createdFeatureLevel = featureLevel;
-            errorOut.clear();
-            return true;
-        };
-
-        const auto createDeviceForAdapter = [&] (IDXGIAdapter1* adapter,
-                                                 const DXGI_ADAPTER_DESC1& desc,
-                                                 String& errorOut) -> bool
-        {
-            ComPtr<ID3D11Device> tempDevice;
-            ComPtr<ID3D11DeviceContext> tempContext;
-            D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
-
-            auto description = String (desc.Description);
 
             auto hr = D3D11CreateDevice (adapter,
-                                         D3D_DRIVER_TYPE_UNKNOWN,
+                                         driverType,
                                          nullptr,
                                          creationFlags,
                                          requestedLevels,
@@ -653,7 +618,7 @@ private:
             if (FAILED (hr) && hr == E_INVALIDARG)
             {
                 hr = D3D11CreateDevice (adapter,
-                                         D3D_DRIVER_TYPE_UNKNOWN,
+                                         driverType,
                                          nullptr,
                                          creationFlags,
                                          nullptr,
@@ -664,18 +629,90 @@ private:
                                          tempContext.GetAddressOf());
             }
 
-            if (FAILED (hr))
+            if (SUCCEEDED (hr))
             {
-                errorOut = describeFailure (description.toRawUTF8(), hr);
-                return false;
+                deviceOut = std::move (tempDevice);
+                contextOut = std::move (tempContext);
+                featureLevelOut = featureLevel;
             }
 
-            createdDevice = std::move (tempDevice);
-            createdContext = std::move (tempContext);
-            createdFeatureLevel = featureLevel;
-            activeAdapterDescription = description;
-            errorOut.clear();
-            return true;
+            return hr;
+        };
+
+        const auto createDeviceCommon = [&] (IDXGIAdapter1* adapter,
+                                             D3D_DRIVER_TYPE driverType,
+                                             const char* driverName,
+                                             String& errorOut,
+                                             const String* adapterDescription) -> bool
+        {
+            String combinedErrors;
+
+            for (auto flags : creationFlagAttempts)
+            {
+                const auto debugSuffix = (flags & D3D11_CREATE_DEVICE_DEBUG) != 0 ? ", debug" : "";
+                logInfo (String::formatted ("Attempting D3D11CreateDevice (%s, flags=0x%08X%s)",
+                                            driverName,
+                                            static_cast<unsigned int> (flags),
+                                            debugSuffix));
+
+                ComPtr<ID3D11Device> tempDevice;
+                ComPtr<ID3D11DeviceContext> tempContext;
+                D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+
+                const auto hr = attemptDeviceCreation (adapter,
+                                                        driverType,
+                                                        flags,
+                                                        tempDevice,
+                                                        tempContext,
+                                                        featureLevel);
+
+                if (SUCCEEDED (hr))
+                {
+                    createdDevice = std::move (tempDevice);
+                    createdContext = std::move (tempContext);
+                    createdFeatureLevel = featureLevel;
+
+                    if (adapterDescription != nullptr)
+                        activeAdapterDescription = *adapterDescription;
+
+                    logInfo (String::formatted ("D3D11CreateDevice succeeded (%s, feature=%s, flags=0x%08X%s)",
+                                                driverName,
+                                                featureLevelToString (featureLevel),
+                                                static_cast<unsigned int> (flags),
+                                                debugSuffix));
+
+                    errorOut.clear();
+                    return true;
+                }
+
+                const auto failure = describeFailure (driverName, flags, hr);
+                logWarning (failure);
+
+                if (combinedErrors.isNotEmpty())
+                    combinedErrors += "; ";
+
+                combinedErrors += failure;
+            }
+
+            errorOut = combinedErrors;
+            return false;
+        };
+
+        const auto createDevice = [&] (D3D_DRIVER_TYPE driverType, const char* driverName, String& errorOut) -> bool
+        {
+            return createDeviceCommon (nullptr, driverType, driverName, errorOut, nullptr);
+        };
+
+        const auto createDeviceForAdapter = [&] (IDXGIAdapter1* adapter,
+                                                 const DXGI_ADAPTER_DESC1& desc,
+                                                 String& errorOut) -> bool
+        {
+            const auto description = String (desc.Description);
+            return createDeviceCommon (adapter,
+                                       D3D_DRIVER_TYPE_UNKNOWN,
+                                       description.toRawUTF8(),
+                                       errorOut,
+                                       &description);
         };
 
         const char* activeDriver = "hardware";
@@ -699,6 +736,7 @@ private:
                 if (adapterError.isNotEmpty())
                 {
                     logWarning (String ("Adapter initialisation failed: ") + adapterError);
+                    appendDiagnostic ("warning", String ("Adapter initialisation failed: ") + adapterError);
                     if (hardwareError.isNotEmpty())
                         hardwareError += "; ";
 
