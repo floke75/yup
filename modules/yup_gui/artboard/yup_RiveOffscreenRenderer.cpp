@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <exception>
@@ -130,10 +131,6 @@ struct RiveOffscreenRenderer::Impl
           rowStride (static_cast<std::size_t> (std::max (widthIn, 0)) * 4u),
           frameSize (rowStride * static_cast<std::size_t> (std::max (heightIn, 0))),
           stagingBufferCount (std::max<std::size_t> (std::size_t { 1 }, stagingBufferCountIn)),
-          stagingTextures (stagingBufferCount),
-          stagingBuffers (stagingBufferCount, std::vector<uint8> (frameSize, 0)),
-          frameStates (stagingBufferCount, FrameState::Available),
-          frameSnapshot (std::make_shared<std::vector<uint8>> (frameSize, 0)),
           presentationRequested (enablePresentation)
     {
         if (widthIn <= 0 || heightIn <= 0)
@@ -142,6 +139,27 @@ struct RiveOffscreenRenderer::Impl
                 "Renderer dimensions must be positive (received %dx%d)",
                 widthIn,
                 heightIn);
+            appendDiagnostic ("error", lastError);
+            return;
+        }
+
+        try
+        {
+            stagingTextures.resize (stagingBufferCount);
+            stagingBuffers.assign (stagingBufferCount, std::vector<uint8> (frameSize, 0));
+            frameStates.assign (stagingBufferCount, FrameState::Available);
+            frameSnapshot = std::make_shared<std::vector<uint8>> (frameSize, 0);
+        }
+        catch (const std::bad_alloc& alloc)
+        {
+            lastError = String::formatted ("Failed to allocate staging buffers (%s)", alloc.what());
+            appendDiagnostic ("error", lastError);
+            return;
+        }
+        catch (...)
+        {
+            lastError = "Failed to allocate staging buffers due to an unknown error";
+            appendDiagnostic ("error", lastError);
             return;
         }
 
@@ -502,6 +520,7 @@ private:
         }
 
         logInfo ("Enumerating DXGI adapters");
+        appendDiagnostic ("info", "Enumerating DXGI adapters");
 
         UINT index = 0;
         Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
@@ -512,14 +531,15 @@ private:
             if (SUCCEEDED (adapter->GetDesc1 (&desc)))
             {
                 const auto dedicatedGiB = static_cast<double> (desc.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
-                logInfo (String::formatted (
-                    "Adapter %u: %s (vendor=0x%04X, device=0x%04X, VRAM=%.2f GiB, flags=0x%08X)",
-                    static_cast<unsigned int> (index),
-                    String (desc.Description).toRawUTF8(),
-                    static_cast<unsigned int> (desc.VendorId),
-                    static_cast<unsigned int> (desc.DeviceId),
-                    dedicatedGiB,
-                    static_cast<unsigned int> (desc.Flags)));
+                const auto message = String::formatted ("Adapter %u: %s (vendor=0x%04X, device=0x%04X, VRAM=%.2f GiB, flags=0x%08X)",
+                                                    static_cast<unsigned int> (index),
+                                                    String (desc.Description).toRawUTF8(),
+                                                    static_cast<unsigned int> (desc.VendorId),
+                                                    static_cast<unsigned int> (desc.DeviceId),
+                                                    dedicatedGiB,
+                                                    static_cast<unsigned int> (desc.Flags));
+                logInfo (message);
+                appendDiagnostic ("info", message);
 
                 AdapterInfo info;
                 info.adapter = adapter;
@@ -528,7 +548,9 @@ private:
             }
             else
             {
-                logWarning (String::formatted ("Adapter %u: failed to query description", static_cast<unsigned int> (index)));
+                const auto warning = String::formatted ("Adapter %u: failed to query description", static_cast<unsigned int> (index));
+                logWarning (warning);
+                appendDiagnostic ("warning", warning);
             }
 
             ++index;
@@ -536,7 +558,9 @@ private:
 
         if (index == 0)
         {
-            logWarning ("No DXGI adapters were reported by the runtime");
+            const auto warning = "No DXGI adapters were reported by the runtime";
+            logWarning (warning);
+            appendDiagnostic ("warning", warning);
         }
     }
 
@@ -544,25 +568,68 @@ private:
     {
         using Microsoft::WRL::ComPtr;
 
+        clearDiagnostics();
         lastError.clear();
 
-        logInfo (String::formatted ("Initialising Direct3D11 offscreen renderer (%dx%d, staging=%zu, presentation=%s, frame=%zu bytes)",
+        const auto isTruthy = [] (const char* value)
+        {
+            if (value == nullptr)
+                return false;
+
+            String str (value);
+            str = str.trim();
+
+            if (str.isEmpty())
+                return false;
+
+            return str.equalsIgnoreCase ("1")
+                || str.equalsIgnoreCase ("true")
+                || str.equalsIgnoreCase ("yes")
+                || str.equalsIgnoreCase ("on")
+                || str.equalsIgnoreCase ("warp");
+        };
+
+        const bool forceWarp = isTruthy (std::getenv ("YUP_RIVE_FORCE_WARP"));
+        const bool requestDebugLayer = isTruthy (std::getenv ("YUP_RIVE_ENABLE_D3D_DEBUG"));
+
+        const auto initialMessage = String::formatted ("Initialising Direct3D11 offscreen renderer (%dx%d, staging=%zu, presentation=%s, frame=%zu bytes)",
                                     width,
                                     height,
                                     stagingBufferCount,
                                     presentationRequested ? "enabled" : "disabled",
-                                    frameSize));
+                                    frameSize);
+        logInfo (initialMessage);
+        appendDiagnostic ("info", initialMessage);
+        appendDiagnostic ("info", "Direct3D backend: RHI=DX11 (YUP_RIVE_USE_D3D=1)");
+
+        if (forceWarp)
+        {
+            const auto warpMessage = String ("YUP_RIVE_FORCE_WARP set - forcing WARP device creation");
+            logInfo (warpMessage);
+            appendDiagnostic ("info", warpMessage);
+        }
+
+        if (requestDebugLayer)
+        {
+            const auto debugMessage = String ("YUP_RIVE_ENABLE_D3D_DEBUG set - requesting D3D11 debug layer");
+            logInfo (debugMessage);
+            appendDiagnostic ("info", debugMessage);
+        }
 
         enumerateAdapters();
 
         const D3D_FEATURE_LEVEL requestedLevels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
 
-        const UINT baseCreationFlags = 0;
+        const UINT baseCreationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+        const UINT debugCreationFlags = baseCreationFlags | D3D11_CREATE_DEVICE_DEBUG;
         std::vector<UINT> creationFlagAttempts;
 #if YUP_DEBUG
-        creationFlagAttempts.push_back (baseCreationFlags | D3D11_CREATE_DEVICE_DEBUG);
+        creationFlagAttempts.push_back (debugCreationFlags);
 #endif
-        if (creationFlagAttempts.empty() || creationFlagAttempts.back() != baseCreationFlags)
+        if (requestDebugLayer && std::find (creationFlagAttempts.begin(), creationFlagAttempts.end(), debugCreationFlags) == creationFlagAttempts.end())
+            creationFlagAttempts.insert (creationFlagAttempts.begin(), debugCreationFlags);
+
+        if (std::find (creationFlagAttempts.begin(), creationFlagAttempts.end(), baseCreationFlags) == creationFlagAttempts.end())
             creationFlagAttempts.push_back (baseCreationFlags);
 
         ComPtr<ID3D11Device> createdDevice;
@@ -650,10 +717,17 @@ private:
             for (auto flags : creationFlagAttempts)
             {
                 const auto debugSuffix = (flags & D3D11_CREATE_DEVICE_DEBUG) != 0 ? ", debug" : "";
-                logInfo (String::formatted ("Attempting D3D11CreateDevice (%s, flags=0x%08X%s)",
-                                            driverName,
-                                            static_cast<unsigned int> (flags),
-                                            debugSuffix));
+                const auto attemptMessage = adapterDescription != nullptr
+                    ? String::formatted ("Attempting D3D11CreateDevice (%s, flags=0x%08X%s)",
+                                         adapterDescription->toRawUTF8 (),
+                                         static_cast<unsigned int> (flags),
+                                         debugSuffix)
+                    : String::formatted ("Attempting D3D11CreateDevice (%s, flags=0x%08X%s)",
+                                         driverName,
+                                         static_cast<unsigned int> (flags),
+                                         debugSuffix);
+                logInfo (attemptMessage);
+                appendDiagnostic ("info", attemptMessage);
 
                 ComPtr<ID3D11Device> tempDevice;
                 ComPtr<ID3D11DeviceContext> tempContext;
@@ -675,11 +749,13 @@ private:
                     if (adapterDescription != nullptr)
                         activeAdapterDescription = *adapterDescription;
 
-                    logInfo (String::formatted ("D3D11CreateDevice succeeded (%s, feature=%s, flags=0x%08X%s)",
-                                                driverName,
-                                                featureLevelToString (featureLevel),
-                                                static_cast<unsigned int> (flags),
-                                                debugSuffix));
+                    const auto successMessage = String::formatted ("D3D11CreateDevice succeeded (%s, feature=%s, flags=0x%08X%s)",
+                                                                    driverName,
+                                                                    featureLevelToString (featureLevel),
+                                                                    static_cast<unsigned int> (flags),
+                                                                    debugSuffix);
+                    logInfo (successMessage);
+                    appendDiagnostic ("info", successMessage);
 
                     errorOut.clear();
                     return true;
@@ -687,6 +763,7 @@ private:
 
                 const auto failure = describeFailure (driverName, flags, hr);
                 logWarning (failure);
+                appendDiagnostic ("warning", failure);
 
                 if (combinedErrors.isNotEmpty())
                     combinedErrors += "; ";
@@ -722,8 +799,10 @@ private:
         {
             for (const auto& info : availableAdapters)
             {
-                logInfo (String::formatted ("Attempting D3D11CreateDevice on adapter '%s'",
-                                            String (info.desc.Description).toRawUTF8()));
+                const auto attemptMessage = String::formatted ("Attempting D3D11CreateDevice on adapter '%s'",
+                                            String (info.desc.Description).toRawUTF8());
+                logInfo (attemptMessage);
+                appendDiagnostic ("info", attemptMessage);
 
                 String adapterError;
                 if (createDeviceForAdapter (info.adapter.Get(), info.desc, adapterError))
@@ -747,45 +826,72 @@ private:
             return false;
         };
 
-        const bool adapterSuccess = tryEnumeratedAdapters();
+        bool adapterSuccess = false;
 
-        if (! adapterSuccess)
+        if (! forceWarp)
+            adapterSuccess = tryEnumeratedAdapters();
+        else
         {
-            logInfo ("Attempting D3D11CreateDevice with hardware driver (no adapter binding)");
+            hardwareError = "Hardware device initialisation skipped via YUP_RIVE_FORCE_WARP";
+            logInfo (hardwareError);
+            appendDiagnostic ("info", hardwareError);
+        }
+
+        bool hardwareCreated = false;
+
+        if (! adapterSuccess && ! forceWarp)
+        {
+            const auto hardwareAttempt = String ("Attempting D3D11CreateDevice with hardware driver (no adapter binding)");
+            logInfo (hardwareAttempt);
+            appendDiagnostic ("info", hardwareAttempt);
+
             if (! createDevice (D3D_DRIVER_TYPE_HARDWARE, "hardware", hardwareError))
             {
                 if (hardwareError.isNotEmpty())
-                    logWarning (String ("Hardware device initialisation failed: ") + hardwareError);
-
-                logInfo ("Retrying with WARP software driver");
-                String warpError;
-
-                if (! createDevice (D3D_DRIVER_TYPE_WARP, "WARP", warpError))
                 {
-                    lastError = hardwareError;
+                    const auto hardwareWarning = String ("Hardware device initialisation failed: ") + hardwareError;
+                    logWarning (hardwareWarning);
+                    appendDiagnostic ("warning", hardwareWarning);
+                }
+            }
+            else
+            {
+                hardwareCreated = true;
+            }
+        }
 
-                    if (warpError.isNotEmpty())
-                    {
-                        if (lastError.isNotEmpty())
-                            lastError += "; ";
+        if (! adapterSuccess && (forceWarp || ! hardwareCreated))
+        {
+            const auto warpAttempt = String ("Attempting D3D11CreateDevice with WARP software driver");
+            logInfo (warpAttempt);
+            appendDiagnostic ("info", warpAttempt);
 
-                        lastError += warpError;
-                    }
+            String warpError;
 
-                    logWarning (String ("Unable to create Direct3D11 device: ") + lastError);
-                    appendDiagnostic ("error", lastError);
-                    return;
+            if (! createDevice (D3D_DRIVER_TYPE_WARP, "WARP", warpError))
+            {
+                lastError = hardwareError;
+
+                if (warpError.isNotEmpty())
+                {
+                    if (lastError.isNotEmpty())
+                        lastError += "; ";
+
+                    lastError += warpError;
                 }
 
-                activeDriver = "WARP";
+                logWarning (String ("Unable to create Direct3D11 device: ") + lastError);
+                appendDiagnostic ("error", lastError);
+                return;
             }
+
+            activeDriver = "WARP";
         }
 
         if (! adapterSuccess && hardwareError.isNotEmpty())
         {
             appendDiagnostic ("warning", String ("Hardware device initialisation fallback: ") + hardwareError);
         }
-
         device = std::move (createdDevice);
         deviceContext = std::move (createdContext);
         recordAdapterDetails (device.Get(), activeDriver, createdFeatureLevel);
@@ -1322,14 +1428,15 @@ private:
         activeAdapterDescription = String (desc.Description);
 
         const double vramGiB = static_cast<double> (desc.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
-        logInfo (String::formatted (
-            "Using %s driver on adapter '%s' (vendor=0x%04X, device=0x%04X, VRAM=%.2f GiB, feature=%s)",
+        const auto adapterMessage = String::formatted ("Using %s driver on adapter '%s' (vendor=0x%04X, device=0x%04X, VRAM=%.2f GiB, feature=%s)",
             driverName,
             activeAdapterDescription.toRawUTF8(),
             static_cast<unsigned int> (desc.VendorId),
             static_cast<unsigned int> (desc.DeviceId),
             vramGiB,
-            featureLevelToString (featureLevel)));
+            featureLevelToString (featureLevel));
+        logInfo (adapterMessage);
+        appendDiagnostic ("info", adapterMessage);
     }
 
     static ATOM registerWindowClass()

@@ -143,9 +143,15 @@ namespace
                         if (! instance->isValid())
                         {
                             const auto error = instance->getLastError().toStdString();
-                            const auto message = error.empty()
+                            const auto diagnostics = instance->getDiagnostics().toStdString();
+                            std::string message = error.empty()
                                 ? std::string ("Failed to initialise RiveOffscreenRenderer")
                                 : error;
+                            if (! diagnostics.empty())
+                            {
+                                message += "\nDiagnostics:\n";
+                                message += diagnostics;
+                            }
                             throw py::value_error (message);
                         }
 

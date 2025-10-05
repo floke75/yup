@@ -16,6 +16,7 @@ _D3D11_SDK_VERSION = 7
 _D3D11_CREATE_DEVICE_BGRA_SUPPORT = 0x20
 
 _D3D_DRIVER_TYPE_HARDWARE = 1
+_D3D_DRIVER_TYPE_UNKNOWN = 0
 _D3D_DRIVER_TYPE_WARP = 5
 
 _FEATURE_LEVELS = (
@@ -122,9 +123,12 @@ def _create_device_raw(adapter: ctypes.c_void_p | None, driver_type: int, creati
     context_ptr = ctypes.c_void_p()
     feature_level = ctypes.c_uint()
 
+    adapter_value = getattr(adapter, 'value', adapter) if adapter is not None else None
+    effective_driver_type = _D3D_DRIVER_TYPE_UNKNOWN if adapter_value else driver_type
+
     hr = d3d11.D3D11CreateDevice(
         adapter,
-        driver_type,
+        effective_driver_type,
         None,
         creation_flags,
         feature_array,
@@ -135,6 +139,20 @@ def _create_device_raw(adapter: ctypes.c_void_p | None, driver_type: int, creati
         ctypes.byref(context_ptr),
     )
 
+    if hr < 0 and (hr & 0xFFFFFFFF) == 0x80070057:
+        hr = d3d11.D3D11CreateDevice(
+            adapter,
+            effective_driver_type,
+            None,
+            creation_flags,
+            None,
+            0,
+            _D3D11_SDK_VERSION,
+            ctypes.byref(device_ptr),
+            ctypes.byref(feature_level),
+            ctypes.byref(context_ptr),
+        )
+
     return int(hr), device_ptr, context_ptr, int(feature_level.value)
 
 
@@ -142,7 +160,7 @@ def _create_device(driver_type: int, creation_flags: int) -> tuple[int, ctypes.c
     return _create_device_raw(None, driver_type, creation_flags)
 
 
-def _enum_adapters() -> list[tuple[ctypes.c_void_p, DXGI_ADAPTER_DESC1]]:
+def _enum_adapters() -> list[tuple[ctypes.c_void_p, dict[str, int | str]]]:
     IID_IDXGIFactory1 = GUID.from_uuid("{770AAE78-F26F-4DBA-A829-253C83D1B387}")
     factory_ptr = ctypes.c_void_p()
     create_factory = ctypes.windll.dxgi.CreateDXGIFactory1
@@ -154,7 +172,7 @@ def _enum_adapters() -> list[tuple[ctypes.c_void_p, DXGI_ADAPTER_DESC1]]:
         print("CreateDXGIFactory1 failed", _format_hresult(hr))
         return []
 
-    adapters: list[tuple[ctypes.c_void_p, DXGI_ADAPTER_DESC1]] = []
+    adapters: list[tuple[ctypes.c_void_p, dict[str, int | str]]] = []
     factory_vtbl = ctypes.cast(factory_ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))
     enum_adapters = ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p))(factory_vtbl[0][7])
 
@@ -170,8 +188,8 @@ def _enum_adapters() -> list[tuple[ctypes.c_void_p, DXGI_ADAPTER_DESC1]]:
 
         adapter_vtbl = ctypes.cast(adapter_ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))
         get_desc1 = ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(DXGI_ADAPTER_DESC1))(adapter_vtbl[0][10])
-        desc = DXGI_ADAPTER_DESC1()
-        hr_desc = get_desc1(adapter_ptr, ctypes.byref(desc))
+        desc_struct = DXGI_ADAPTER_DESC1()
+        hr_desc = get_desc1(adapter_ptr, ctypes.byref(desc_struct))
         if hr_desc < 0:
             print(f"IDXGIAdapter1::GetDesc1 failed for adapter {idx}", _format_hresult(hr_desc))
             release = ctypes.CFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(adapter_vtbl[0][2])
@@ -179,18 +197,31 @@ def _enum_adapters() -> list[tuple[ctypes.c_void_p, DXGI_ADAPTER_DESC1]]:
             idx += 1
             continue
 
-        adapters.append((adapter_ptr, desc))
+        desc_copy: dict[str, int | str] = {
+            "Description": desc_struct.Description.rstrip("\x00"),
+            "VendorId": int(desc_struct.VendorId),
+            "DeviceId": int(desc_struct.DeviceId),
+            "DedicatedVideoMemory": int(desc_struct.DedicatedVideoMemory),
+            "DedicatedSystemMemory": int(desc_struct.DedicatedSystemMemory),
+            "SharedSystemMemory": int(desc_struct.SharedSystemMemory),
+        }
+        adapters.append((adapter_ptr, desc_copy))
         idx += 1
 
-    # caller is responsible for releasing adapters; release factory now
     _release_com(factory_ptr)
     return adapters
 
 
-def _describe_adapter(desc: DXGI_ADAPTER_DESC1) -> str:
-    name = desc.Description.rstrip("\x00")
-    vram_gib = desc.DedicatedVideoMemory / (1024 ** 3)
-    return f"{name} (vendor=0x{desc.VendorId:04X}, device=0x{desc.DeviceId:04X}, VRAM={vram_gib:.2f} GiB)"
+def _describe_adapter(desc: dict[str, int | str]) -> str:
+    name = str(desc.get("Description", ""))
+    vram_bytes = float(desc.get("DedicatedVideoMemory", 0))
+    vram_gib = vram_bytes / (1024 ** 3)
+    vendor = int(desc.get("VendorId", 0))
+    device = int(desc.get("DeviceId", 0))
+    return f"{name} (vendor=0x{vendor:04X}, device=0x{device:04X}, VRAM={vram_gib:.2f} GiB)"
+
+
+
 
 
 def _run_check(force_driver: int | None) -> int:

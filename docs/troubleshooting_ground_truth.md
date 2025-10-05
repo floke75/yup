@@ -33,3 +33,25 @@ future agents do not re-hash disproven assumptions.
 - Use the new diagnostics report to record the HRESULT emitted before `ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation` bubbles up, then correlate it with the D3D debug layer output in Visual Studio.
 - Once the renderer constructs successfully, add an integration test that streams frames through `NDIOrchestrator` while asserting that `get_diagnostics()` remains empty during steady-state rendering.
 - Stay aligned with the upstream `yup_constructDirect3DGraphicsContext` implementation (`modules/yup_graphics/native/yup_GraphicsContext_d3d.cpp` in `yup_upstream_ref`): our offscreen renderer now mirrors its adapter enumeration + `D3D_DRIVER_TYPE_UNKNOWN` device creation before falling back to driver-type calls. Monitor future HRESULTs to confirm the change eliminates the `0x80070057` path in the diagnostics tool.
+## Diagnostics Update (2025-10-05)
+- Ran the refreshed `tools/check_d3d11_device.py`; hardware and WARP drivers both initialise successfully at feature level 0x0000B000. Output:
+  ```
+  Enumerating adapters via IDXGIFactory1...
+  EnumAdapters1(3) failed 0x887A0002 (The object was not found. If calling IDXGIFactory::EnumAdaptes, there is no adapter with the specified ordinal.)
+  Adapter 0: NVIDIA GeForce RTX 5090 (vendor=0x10DE, device=0x2B85, VRAM=31.35 GiB)
+    Success (flags=0): feature level 0x0000B000
+  Adapter 1: NVIDIA GeForce RTX 5090 (vendor=0x10DE, device=0x2B85, VRAM=31.35 GiB)
+    Success (flags=0): feature level 0x0000B000
+  Adapter 2: Microsoft Basic Render Driver (vendor=0x1414, device=0x008C, VRAM=0.00 GiB)
+    Success (flags=0): feature level 0x0000B000
+
+  Attempting driver-type creation...
+  Success: Direct3D11 device initialised using hardware driver
+  Feature level: 0x0000B000
+  ```
+  Running with `--warp` mirrors the above but forces the WARP driver (same feature level output).
+- The renderer now annotates diagnostics with adapter enumeration, flag selection, and environment overrides. Set `YUP_RIVE_FORCE_WARP=1` to skip hardware paths entirely, and `YUP_RIVE_ENABLE_D3D_DEBUG=1` to force the debug layer even on release builds. Both toggles are recorded in `get_diagnostics()`.
+- Despite the improved logging, constructing `RiveOffscreenRenderer(1280x720)` still raises `ValueError: bad allocation` before the Direct3D device is created. The failure now captures an `[info] Initialising Direct3D11 offscreen renderer...` diagnostic entry internally, but the constructor throws before Python can surface it. The next follow-up should capture those diagnostics via the debug logger or by instrumenting the binding to return them alongside the exception.
+
+
+
