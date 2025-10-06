@@ -480,7 +480,7 @@ def _default_renderer_factory (config: NDIStreamConfig) -> Any:
     if RiveOffscreenRenderer is None:  # pragma: no cover - executed only in production without injection
         raise ImportError("yup_rive_renderer is not available; build the extension before creating streams")
 
-    staging_buffer_count = 1
+    staging_buffer_count = 3
     enable_presentation = False
 
     if config.renderer_options:

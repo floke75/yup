@@ -35,8 +35,16 @@
 
 namespace yup
 {
+namespace detail
+{
+    String consumeStartupDiagnosticsForBinding();
+    void clearStartupDiagnosticsForBinding();
+    const char* getStartupStageForBinding() noexcept;
+}
+
 namespace python
 {
+
 namespace
 {
     namespace py = pybind11;
@@ -144,6 +152,7 @@ namespace
                         {
                             const auto error = instance->getLastError().toStdString();
                             const auto diagnostics = instance->getDiagnostics().toStdString();
+                            const auto startup = yup::detail::consumeStartupDiagnosticsForBinding().toStdString();
                             std::string message = error.empty()
                                 ? std::string ("Failed to initialise RiveOffscreenRenderer")
                                 : error;
@@ -152,18 +161,55 @@ namespace
                                 message += "\nDiagnostics:\n";
                                 message += diagnostics;
                             }
+                            if (! startup.empty())
+                            {
+                                message += "\nStartup diagnostics:\n";
+                                message += startup;
+                            }
+                            message += "\nStartup stage: ";
+                            message += yup::detail::getStartupStageForBinding();
                             throw py::value_error (message);
                         }
 
+                        yup::detail::clearStartupDiagnosticsForBinding();
                         return instance;
+
+                    }
+                    catch (const py::builtin_exception&)
+                    {
+                        throw;
                     }
                     catch (const std::exception& exc)
                     {
-                        throw py::value_error (std::string ("Failed to initialise RiveOffscreenRenderer: ") + exc.what());
+                        std::string message = std::string ("Failed to initialise RiveOffscreenRenderer: ") + exc.what();
+                        const auto startup = yup::detail::consumeStartupDiagnosticsForBinding().toStdString();
+                        if (! startup.empty())
+                        {
+                            message += "\nStartup diagnostics:\n";
+                            message += startup;
+                        }
+                        else
+                        {
+                            message += "\nStartup stage: ";
+                            message += yup::detail::getStartupStageForBinding();
+                        }
+                        throw py::value_error (message);
                     }
                     catch (...)
                     {
-                        throw py::value_error ("Failed to initialise RiveOffscreenRenderer: unknown error");
+                        std::string message = "Failed to initialise RiveOffscreenRenderer: unknown error";
+                        const auto startup = yup::detail::consumeStartupDiagnosticsForBinding().toStdString();
+                        if (! startup.empty())
+                        {
+                            message += "\nStartup diagnostics:\n";
+                            message += startup;
+                        }
+                        else
+                        {
+                            message += "\nStartup stage: ";
+                            message += yup::detail::getStartupStageForBinding();
+                        }
+                        throw py::value_error (message);
                     }
                 }),
                 "width"_a,
@@ -363,8 +409,36 @@ PYBIND11_MODULE (yup_rive_renderer, module)
         " The module is designed for Windows 11 workflows using Direct3D11.";
 
     python::bindRiveOffscreenRenderer (module);
+
+    module.def ("_debug_consume_startup_diagnostics", []() {
+        return yup::detail::consumeStartupDiagnosticsForBinding().toStdString();
+    });
+    module.def ("_debug_startup_stage", []() {
+        return std::string (yup::detail::getStartupStageForBinding());
+    });
+
 }
 
 } // namespace python
 } // namespace yup
 
+
+namespace yup
+{
+namespace detail
+{
+    String consumeStartupDiagnosticsForBinding()
+    {
+        return {};
+    }
+
+    void clearStartupDiagnosticsForBinding()
+    {
+    }
+
+    const char* getStartupStageForBinding() noexcept
+    {
+        return "startup";
+    }
+}
+}

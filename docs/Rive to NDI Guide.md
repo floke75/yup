@@ -61,9 +61,10 @@ progressed = renderer.advance(1 / 60)
 frame = renderer.acquire_frame_view()  # zero-copy BGRA memoryview
 ```
 
-`staging_buffer_count` controls how many GPU readback textures the renderer keeps in flight. Increase
-the value (for example, when feeding multiple consumers) to smooth out bursts at the cost of a few
-frames of additional latency. Leave it at the default of `1` when you need lowest-latency updates.
+`staging_buffer_count` controls how many GPU readback textures the renderer keeps in flight. Increase the value (for example, when feeding multiple consumers) to smooth out bursts at the cost of a few frames of additional latency. On the RTX 5090 testbed (2025-10-06) offscreen-only construction succeeds only when this value is `3`; counts of `1`, `2`, or `4` reproduce the staging-buffer allocation failure captured in `docs/troubleshooting_ground_truth.md`. Override the default to `3` until the allocator is fixed.
+
+> [!IMPORTANT]
+> The orchestrator still defaults to `staging_buffer_count=1`. Pass `renderer_options={"staging_buffer_count": 3}` (as shown below) to keep Windows runs stable until the allocator fix lands, and update the troubleshooting log if other adapters require different values.
 
 `acquire_frame_view()` returns a read-only `memoryview` that advertises a `"B"` (unsigned byte)
 format.  This allows `memoryview.cast("B")` and NumPy consumers to recognise the buffer as
@@ -192,7 +193,21 @@ The suites provide fake renderers and senders so they run without native GPU or 
 When modifying the renderer API, update the bindings and tests in the same commit to avoid drift.
 
 ## 6. Troubleshooting
-- **`ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation`:** Direct3D 11 refused to create a device. Adapter descriptions, feature levels, and HRESULT codes are now emitted during initialisation, so check the log to confirm which driver path failed before retracing your steps. We see this even on the primary Windows 11 workstation (RTX 5090, active displays), so focus on offscreen device policies, staging-buffer pressure, and WARP availability (`d3d10warp.dll`) before assuming the host is headless or missing GPU drivers.
+
+### Direct3D startup diagnostics workflow
+1. Establish a baseline by running `py -3.11 tools\check_d3d11_device.py` (and again with `--warp`). Confirm the feature level and record the adapter list in `docs/troubleshooting_ground_truth.md`.
+2. When reproducing startup failures, set `YUP_RIVE_FORCE_WARP=1` to force the WARP path or `YUP_RIVE_ENABLE_D3D_DEBUG=1` to request the Direct3D debug layer. The renderer echoes both toggles in `get_diagnostics()` and the new startup log.
+3. After constructing `RiveOffscreenRenderer`, immediately capture the startup log and stage:
+   ```python
+   from yup_rive_renderer import _debug_consume_startup_diagnostics, _debug_startup_stage
+   print('stage:', _debug_startup_stage())
+   print(_debug_consume_startup_diagnostics())
+   ```
+   The constructor now includes this information in raised `ValueError`s, but pulling it explicitly lets you append the raw output to troubleshooting notes before retrying.
+4. Append the resulting log (including HRESULTs and adapter attempts) to `docs/troubleshooting_ground_truth.md` so the next session can skip already-tested permutations.
+
+- **`ValueError: Failed to initialise RiveOffscreenRenderer`** - The exception now includes the startup stage plus the log captured above. Use the workflow to determine whether device creation, staging allocation, or presentation is failing. If hardware succeeds but WARP fails (or vice versa), note the HRESULTs and keep both logs in the troubleshooting file before changing build flags.
+- **`CreateUnorderedAccessView(...): The parameter is incorrect.`** - Observed when presentation is enabled with the Direct3D debug layer; see `docs/troubleshooting_ground_truth.md` (2025-10-06) for the captured log. Until the UAV descriptor is corrected, disable presentation during captures or record the descriptor payload before rerunning.
 - **`ImportError: yup_rive_renderer`:** Ensure `python -m build --wheel` succeeded and that the wheel
   was installed into the active Python environment.
 - **`ImportError: cyndilib`:** Install `cyndilib>=0.0.8` when streaming to real NDI receivers. The

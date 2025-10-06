@@ -593,7 +593,7 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     sender_handles: list[Any] = []
 
     class StubRenderer:
-        def __init__ (self, width: int, height: int, staging_buffer_count: int = 1) -> None:
+        def __init__ (self, width: int, height: int, staging_buffer_count: int = 3, enable_presentation: bool = False) -> None:
             self.width = width
             self.height = height
             self.row_stride = width * 4
@@ -738,7 +738,7 @@ def test_default_factories_wire_renderer_and_sender (monkeypatch: pytest.MonkeyP
     assert renderer.played_animation == ("spin", False)
     assert renderer.played_state_machine is None
     assert renderer.paused is False
-    assert renderer.staging_buffer_count == 1
+    assert renderer.staging_buffer_count == 3
 
     assert sender_handles, "Sender factory should have been invoked"
     sender = sender_handles[-1]
@@ -921,7 +921,7 @@ def test_default_renderer_factory_respects_staging_buffer_count (monkeypatch: py
     captured: dict[str, tuple[int, int, int]] = {}
 
     class StubRenderer:
-        def __init__ (self, width: int, height: int, staging_buffer_count: int = 1) -> None:
+        def __init__ (self, width: int, height: int, staging_buffer_count: int = 3, enable_presentation: bool = False) -> None:
             captured["args"] = (width, height, staging_buffer_count)
 
         def is_valid (self) -> bool:
@@ -960,8 +960,8 @@ def test_default_renderer_factory_validates_staging_buffer_count (monkeypatch: p
 
 def test_default_renderer_factory_surfaces_renderer_error (monkeypatch: pytest.MonkeyPatch) -> None:
     class StubRenderer:
-        def __init__ (self, width: int, height: int, staging_buffer_count: int = 1) -> None:
-            assert staging_buffer_count == 1
+        def __init__ (self, width: int, height: int, staging_buffer_count: int = 3, enable_presentation: bool = False) -> None:
+            assert staging_buffer_count == 3
             self._width = width
             self._height = height
 

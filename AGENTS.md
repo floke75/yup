@@ -150,17 +150,24 @@ Primary module headers (e.g., `yup_graphics.h`) must also include the declaratio
 ## TODO List
 - [ ] Publish an updated control-panel payload schema example in `docs/rive_ndi_overview.md` and sync the same JSON snippet into `docs/demos/` release notes.
 - [ ] Refresh `tools/install_windows.ps1` to cover the new optional browser build step and validate the generated artifacts with `just smoke:ndi` on a clean Windows host.
-- [ ] Record a short troubleshooting appendix for common Windows GPU driver issues discovered during the latest offscreen renderer QA pass.
-- [ ] Validate `python/examples/run_rive_ndi.py` on an environment where offscreen D3D11 initialisation succeeds; the current RTX 5090 desktop (with active displays) still raises `ValueError: Failed to initialise RiveOffscreenRenderer: bad allocation` even when run locally with `--present-preview`. The constructor fails before the D3D11 logging path executes, so the next session should capture HRESULTs via the new diagnostics logger and confirm whether the failure happens while allocating the staging buffers or during device creation.
-- [ ] Run `python tools/check_d3d11_device.py` (from a native Windows shell) to document hardware vs WARP device creation results and archive the output in `docs/troubleshooting_ground_truth.md`.
+- [ ] Fold the new Direct3D startup diagnostics into the wider troubleshooting docs (`docs/Rive to NDI Guide.md`, `docs/Windows Build and Packaging.md`) so the Python helpers are easy to discover.
+- [ ] Re-run `python/examples/run_rive_ndi.py --present-preview` now that the renderer initialises on the RTX 5090; capture `_debug_consume_startup_diagnostics()` output if the orchestrator still fails.
+- [ ] Add pytest coverage for the `_debug_consume_startup_diagnostics` / `_debug_startup_stage` helpers to ensure the startup log keeps working across rebuilds.
+- [ ] Expand renderer diagnostics tests to cover alternate pixel formats (e.g. RGBA8, R16F) or at least document how to toggle them for sanity checks once the UAV issue is resolved.
+
+### Immediate Unblock Plan
+1. Document the new startup-diagnostics workflow end-to-end in `docs/Rive to NDI Guide.md` and refresh the troubleshooting appendix with the Python helper usage (`_debug_consume_startup_diagnostics`, `_debug_startup_stage`, env toggles).
+2. Run `python/examples/run_rive_ndi.py --present-preview` in both hardware and WARP modes, capture the startup log + `get_diagnostics()` output, and append the findings (success or failure) to `docs/troubleshooting_ground_truth.md`.
+3. Add pytest coverage that exercises the debug helpers and asserts that successive constructor failures clear/retain diagnostics as expected; wire the test into the smoke recipe.
+4. If the example run still fails, collect HRESULTs via the Direct3D debug layer (`YUP_RIVE_ENABLE_D3D_DEBUG=1`) and attach them to the troubleshooting log before iterating on resource allocation.
 
 # Packaging
 - Run `python tools/package_wheel.py` to produce a release-mode build and wheel.
 
 ## Known Limitations
-- Despite the local NVIDIA GeForce RTX 5090 desktop with active displays, offscreen D3D11 initialisation still returns `bad allocation`. The latest attempts show `D3D11CreateDevice` rejecting the parameter set (`0x80070057`) and, when a device is created, staging texture allocation failing with `0x8007000E`. The renderer now mirrors the upstream adapter-enumeration flow before falling back to driver-type creation, but additional diagnostics are required before rerunning the example runner and NDI validation on the same workstation.
-- Despite the local NVIDIA GeForce RTX 5090 desktop with active displays, offscreen D3D11 initialisation still returns `bad allocation`. The latest attempts show `D3D11CreateDevice` rejecting the parameter set (`0x80070057`) and, when a device is created, staging texture allocation failing with `0x8007000E`. The renderer now mirrors the upstream adapter-enumeration flow before falling back to driver-type creation, but the D3D sanity script continues to report `0x80070057` and `tmp_run_renderer.py` still raises `ValueError`, so further diagnostics are required before rerunning the example runner and NDI validation on the same workstation.
-- The new example runner `python/examples/run_rive_ndi.py` surfaces constructor failures via `ValueError`; expect this until the Direct3D initialisation issues are resolved. The local workstation has an RTX 5090 with active displays, so treat the failure as an offscreen-device policy or allocation problem rather than missing GPU hardware.
+- The RTX 5090 workstation now initialises the renderer successfully after the 2025-10-06 diagnostics rebuild. Keep an eye on other adapters�earlier logs captured `0x80070057`/`0x8007000E`, so record HRESULTs if they resurface on different hardware or driver revisions.
+- The Python `_debug_*` helpers currently rely on manual smoke tests; we still lack automated coverage and structured reporting in higher-level tooling.
+- The new example runner `python/examples/run_rive_ndi.py` has not been revalidated since the renderer started succeeding; expect to capture fresh diagnostics on the next pass before declaring the pipeline healthy.
 
 ## Workflow Expectations
 - Analyse existing helpers (e.g., `modules/yup_graphics/`, `modules/yup_core/`) before introducing new abstractions; reuse utilities wherever feasible.
